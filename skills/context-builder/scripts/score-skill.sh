@@ -20,6 +20,13 @@ check() { # check <label> <condition-exit-code> <detail>
 
 echo "context-builder — mechanical score"
 
+for tool in rg fd; do
+  if ! command -v "$tool" >/dev/null; then
+    echo "error: $tool is required to run the mechanical checks" >&2
+    exit 1
+  fi
+done
+
 # --- discoverability: the description is the whole trigger surface, and it is capped
 desc_len=$(awk '/^description:/{sub(/^description: /,""); print}' SKILL.md | tr -d '\n' | wc -c | tr -d ' ')
 [[ "$desc_len" -le 1024 ]]; check "description <= 1024 chars" $? "$desc_len chars, $((1024 - desc_len)) spare"
@@ -41,8 +48,11 @@ orphans=$(fd -t f . references scripts prompts 2>/dev/null \
   | while read -r p; do
       stem=$(basename "$p"); stem=${stem%.*}
       # every other shipped text, so a file mentioning itself doesn't count
-      index=$(printf '%s\n' SKILL.md scripts/*.sh evals/README.md | grep -vxF "$p")
-      grep -qF "$stem" $index || echo "$p"
+      index=()
+      for source in SKILL.md scripts/*.sh scripts/*.py references/*.md prompts/*.md evals/README.md; do
+        [[ "$source" == "$p" ]] || index+=("$source")
+      done
+      grep -qF "$stem" "${index[@]}" || echo "$p"
     done)
 [[ -z "$orphans" ]]; check "no unreachable resources" $? "${orphans:-all reachable}"
 
@@ -50,7 +60,7 @@ orphans=$(fd -t f . references scripts prompts 2>/dev/null \
 bad_shebang=$(head -1 scripts/search-*.py | rg -v '^(==>|$)' | rg -v 'python3$' || true)
 [[ -z "$bad_shebang" ]]; check "scripts shebang python3" $? "${bad_shebang:-all python3}"
 
-nonexec=$(fd -t f -e py -e sh . scripts | while read -r p; do [[ -x "$p" ]] || echo "$p"; done)
+nonexec=$(for p in scripts/*.sh scripts/search-*-sources.py; do [[ -x "$p" ]] || echo "$p"; done)
 [[ -z "$nonexec" ]]; check "scripts executable" $? "${nonexec:-all +x}"
 
 if [[ -x scripts/.venv/bin/python3 ]] \
@@ -96,6 +106,13 @@ if out=$(./scripts/search-ts-sources.py reservationpolicy evals/fixtures/warehou
   check "delegation fixture (ts)" $? "30 sources -> the 3 that matter"
 else
   check "delegation fixture (ts)" 1 "script exited non-zero"
+fi
+
+# Assert structured results and cache behaviour for every supported grammar.
+if out=$(PYTHONDONTWRITEBYTECODE=1 scripts/.venv/bin/python3 -B -m unittest discover -s evals -p 'test_*.py' 2>&1); then
+  check "search regressions (4 languages)" 0 "coverage, cache, filtering, empty output, disabled work"
+else
+  check "search regressions (4 languages)" 1 "$out"
 fi
 
 # --- eval wiring: a case directory with no grader scores nothing, silently.

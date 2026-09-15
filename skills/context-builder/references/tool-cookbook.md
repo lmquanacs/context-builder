@@ -24,11 +24,12 @@ Investigation is repetitive: the same search gets re-run with a tweaked pattern,
 wider glob, a different directory. Retyping a long pipeline each time burns turns
 and introduces typos that silently change the result.
 
-**Rule: the moment a command is worth running a second time, it belongs in a script.**
+Save a script when a long or error-prone pipeline will be reused. A second run
+of a short command does not require creating a file.
 
-- Every script goes in a `.scripts/` directory at the root of the current working
-  directory. **Create it yourself when it doesn't exist** (`mkdir -p .scripts`) —
-  don't ask, don't fall back to running inline.
+- Use an existing project tooling directory for reusable searches, or `.scripts/`
+  when the project has no convention. Keep one-off investigation helpers in a
+  temporary directory; creating tooling should save more work than it adds.
 - **Don't re-create what ships with this skill.**
   `$SKILL_DIR/scripts/search-java-sources.py` (resolve `SKILL_DIR` as described
   in `SKILL.md`) and its Kotlin, Python

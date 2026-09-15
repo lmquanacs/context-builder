@@ -1,77 +1,101 @@
-# Before reviewing code
+# Code review
 
-A diff read in isolation is the main source of confident-but-wrong review
-findings. This ordering forces the caller context to be gathered before any
-judgement is allowed.
-
-Comments come out in [Conventional Comments](https://conventionalcomments.org/)
-format — `<label> [decorations]: <subject>`. The label does real work beyond
-tidiness: it forces a decision about *what kind* of feedback each comment is,
-and `question:` gives uncertainty somewhere to go that isn't a padded `issue:`.
-Blocking versus non-blocking stops being tone the author has to infer, and the
-output stays greppable.
+Copy the prompt below and fill in the scope. It reviews the code and produces
+`review-result.md`; it does not implement fixes.
 
 ---
 
-Use context-builder in review-pack mode: evidence before judgement.
+Use context-builder to review this code for actionable defects.
 
-Under review: <PR number, branch, or `git diff main...HEAD`>
-What it claims to do: <the PR description, one line>
-I care most about: <correctness / performance / security / API surface / all>
+Scope: <PR, branch compared with a base, uncommitted changes, or specific files>
+Intended behaviour: <description, or infer it from the task and existing contracts>
+Priorities: <correctness / performance / security / compatibility / all>
+Constraints: <known requirements, or none supplied>
 
-Start from `git diff --stat` and `git log --oneline -8` on the touched paths.
-For every changed file, find its callers before judging the change. Budget: Standard.
-If I said security above, run `semgrep` taint mode over the touched paths first:
-an `issue: (security)` has to name a source, a sink, and the path between them.
-No semgrep on PATH — say so, and those comments are `question:`, not `issue:`.
+## Establish the scope
 
-Give me back, in this order:
-1. What changed — the diff summarized, no opinions yet
-2. The context each change lands in — `path:line` anchors for callers,
-   contracts, and the existing conventions the change should be matching
-3. Only then the review comments, in Conventional Comments format
-4. Open questions — things that need the author, not more searching
+- Read the repository instructions that apply to the reviewed files.
+- For a PR or branch, establish the intended base and inspect the diff against
+  its merge base. Do not assume the base branch is named `main`.
+- For uncommitted changes, inspect `git status --short`, unstaged and staged
+  diffs, and relevant untracked files. Never reset or overwrite local work.
+- For named files, review their current behaviour; distinguish existing defects
+  from defects introduced by a diff when a comparison is available.
+- Start with a scoped diff summary, then the changed ranges. Disable git paging.
+  Inspect history only when a live question depends on why something changed.
 
-Format every comment as:
+## Gather only the context needed
 
-    <label> [decorations]: <subject>
+Choose Micro for a small, clear change; Standard for a typical review. Split
+larger reviews into bounded areas. Discovery budgets limit investigation, not
+completion: disclose any area you could not review rather than claiming coverage.
 
-    [discussion]
+Start from the changed behaviour and identify the contracts it affects. Read
+callers, configuration, and focused tests when they resolve a concrete question;
+do not trace every caller of every changed file by default. Use the reading-list
+scripts only when ranking candidates or following relationships will help. Start
+with one hop and a small result cap.
 
-- **label** — one of `praise`, `nitpick`, `suggestion`, `issue`, `todo`,
-  `question`, `thought`, `chore`, `note`. Use `typo`, `polish` or `quibble` if
-  one of them fits better.
-- **subject** — the point itself, one line.
-- **decorations** — parenthesised, comma-separated. Always carry `(blocking)` or
-  `(non-blocking)`; add a topic decoration such as `(security)`, `(test)`,
-  `(perf)`, `(ux)` where it classifies further. Keep the list short — a comment
-  wearing four decorations has stopped being readable.
-- **discussion** — optional, but required on anything `(blocking)`: the why, and
-  what resolving it looks like.
+Check relevant failure modes: incorrect results, boundary conditions, error
+handling, resource cleanup, concurrency, compatibility, security boundaries, and
+performance regressions. Prioritize those the change can actually affect.
 
-Label rules I care about:
-- `issue:` — only for a problem you can state as a concrete failure: specific
-  input or state -> wrong output. Pair it with a `suggestion:` for the fix.
-- `question:` — when you suspect a problem but cannot demonstrate it. Do not
-  promote a suspicion to `issue:` to make it land harder; that is how reviews
-  lose credibility.
-- `nitpick:`, `thought:`, `note:` — non-blocking by nature. Never mark them blocking.
-- `praise:` — at least one, and only where it is sincere. Skip it rather than
-  manufacture it.
-- Every comment carries a `path:line` anchor.
+## Verify candidate findings
 
-Ground each comment in something you actually read. If a claim rests on
-inference rather than a file you opened, it is a `question:`, not an `issue:`.
+For each suspected defect, establish:
 
----
+1. The input, state, or execution path that triggers it.
+2. The expected behaviour and the contract or requirement supporting it.
+3. The actual behaviour and practical impact.
+4. The code path or focused reproduction that demonstrates the difference.
 
-**Write the review to `review-result.md`**, in this structure:
+Inspect surrounding code before concluding that a check or operation is missing.
+Run focused existing tests or a small isolated reproduction when useful. A missing
+test alone is not a defect. State which checks ran and their limitations.
 
-- **Summary** — what changed, one paragraph, no opinions
-- **Context** — the anchors gathered in step 2
-- **Blocking** — every `(blocking)` comment, most severe first
-- **Non-blocking** — the rest, grouped by label
-- **Open questions** — what needs the author rather than more searching
+Use structural or dataflow tools when their capabilities answer the question.
+For a security finding involving dataflow, verify the source, sink, and connecting
+path. A missing scanner does not prevent a finding supported by a manual trace;
+scanner output alone is not proof of exploitability.
 
-If nothing blocking survived verification, say so plainly at the top rather than
-promoting a nitpick to fill the space.
+Discard disproved findings. Put unresolved, material assumptions under Open
+questions. Avoid speculative problems, unrelated cleanup, style preferences,
+forced praise, and duplicated comments about the same root cause.
+
+## Write the review
+
+Write `review-result.md` and give a concise summary in the response. Lead with
+findings, ordered by severity:
+
+- **P0 — Critical:** immediate action; broadly blocks use or risks severe loss.
+- **P1 — High:** significant failure on a supported, plausible execution path.
+- **P2 — Medium:** a concrete defect with narrower impact or a reasonable workaround.
+- **P3 — Low:** a minor, actionable defect.
+
+Format each finding as:
+
+### [P1] <short title describing the failure>
+
+**Location:** `<path>:<line>` — the smallest relevant location; prefer a changed
+line for a diff review.
+
+**Trigger and impact:** <when it fails, what happens, and why it matters>
+
+**Evidence:** <verified code path or reproduction; expected versus actual result>
+
+**Suggested fix:** <a concise direction, without implementing it>
+
+If Conventional Comments are requested, use
+`issue (blocking, correctness): [P1] <title>` or the appropriate topic. Mark
+blocking status based on impact and project policy, not tone.
+
+After the findings, include:
+
+- **Open questions:** material uncertainties that need clarification, if any.
+- **Validation and coverage:** checks run, areas reviewed, and material gaps.
+- **Summary:** the resulting behaviour of the change in one short paragraph.
+
+If no actionable defects survive verification, say **"No actionable findings."**
+Do not imply that unreviewed areas are safe or that tests ran when they did not.
+Do not modify source files or post comments to external services as part of this
+review; propose fixes in the report.

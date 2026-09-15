@@ -3,9 +3,21 @@
 Scoring this skill has two halves. The mechanical half — description length,
 SKILL.md token weight, whether every shipped file is reachable, whether the
 documented commands run — is `../scripts/score-skill.sh`, which exits
-non-zero on the first thing it finds, so it can gate a commit. This
+non-zero if any check fails, so it can gate a commit. This
 directory is the other half: does the skill actually change what the agent does,
 and for the better.
+
+## Script regressions
+
+`test_search_scripts.py` runs automatically through `score-skill.sh`. Run it alone:
+
+```bash
+scripts/.venv/bin/python3 -B -m unittest discover -s evals -p 'test_*.py'
+```
+
+Temporary fixtures cover all four grammars, root coverage, ranking, final `--all`
+filtering, cache reuse/invalidation, empty results, argument validation, and
+skipping disabled work. These assertions complement the agent behaviour cases.
 
 ## Running
 

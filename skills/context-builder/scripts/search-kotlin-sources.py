@@ -21,11 +21,12 @@ stays on ripgrep, because how often a word occurs in a file is a text question
 and rg answers it an order of magnitude faster than a parse would.
 
 Several keywords are allowed: by default they are unioned, with --all only files
-carrying every one of them seed the search. --from-file seeds from a path instead
+carrying every one of them appear in the results. --from-file seeds from a path instead
 of (or as well as) a keyword, for when you already know where to start.
 """
 
 import argparse
+from search_common import tree_stamp, validate_options
 import hashlib
 import json
 import os
@@ -218,7 +219,7 @@ TEST_SUFFIXES = ("Test", "Tests", "Spec", "IT")
 
 EVIDENCE_WIDTH = 96  # a source line is evidence, not a paragraph
 BORING_LINE = re.compile(r"^\s*(?:import|package)\b")  # true, and tells you nothing
-CACHE_VERSION = 3  # bumped: the cache now holds a full structural index
+CACHE_VERSION = 4  # fingerprint every source path and its metadata
 
 
 def die(msg):
@@ -282,65 +283,13 @@ def keyword_pattern(keyword):
 
 
 def find_source_roots(root):
-    """Locate src trees under root; returns (roots, note_for_the_user)."""
-    if shutil.which("fd"):
-        proc = subprocess.run(
-            ["fd", "-t", "d", "--full-path", r"/src$", "-H"]
-            + [x for g in EXCLUDE_GLOBS for x in ("-E", g.lstrip("!"))]
-            + [str(root)],
-            capture_output=True,
-            text=True,
-        )
-        found = [line for line in proc.stdout.splitlines() if line]
-        note = None
-    else:
-        note = "`fd` is unavailable; using os.walk instead."
-        found = []
-        for dirpath, dirnames, _ in os.walk(root):
-            dirnames[:] = [d for d in dirnames if d not in EXCLUDE_DIRS and not d.startswith(".")]
-            if os.path.basename(dirpath) == "src":
-                found.append(dirpath)
-
-    roots = []
-    for src in sorted(found):
-        # Prefer the language dirs when the Gradle/Maven layout is present, so
-        # res/ and resources/ never enter the candidate set. Test trees stay in —
-        # they are demoted at ranking time, not hidden.
-        narrowed = [
-            os.path.join(src, sub)
-            for sub in SOURCE_SET_DIRS
-            if os.path.isdir(os.path.join(src, sub))
-        ]
-        roots.extend(narrowed or [src.rstrip("/")])
-
-    # Drop roots nested inside another root to avoid double-counting files.
-    roots = sorted(set(roots))
-    roots = [r for r in roots if not any(r != o and r.startswith(o + "/") for o in roots)]
-    if not roots:
-        # Pointing straight at src/main (or deeper) is normal, not a miss.
-        inside_src = "src" in str(root).split("/")
-        return [str(root)], (
-            None if inside_src else "no src/ directory found; searching the whole root instead"
-        )
-    return roots, note
+    """Keep the requested scope: conventional directories must not hide peers."""
+    return [str(root)], None
 
 
 def list_sources(roots):
-    if shutil.which("fd"):
-        proc = subprocess.run(
-            ["fd", ".", "-t", "f", "-e", "kt", "-e", "kts"]
-            + [x for g in EXCLUDE_GLOBS for x in ("-E", g.lstrip("!"))]
-            + roots,
-            capture_output=True,
-            text=True,
-        )
-        return [line for line in proc.stdout.splitlines() if line]
-    files = []
-    for root in roots:
-        for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = [d for d in dirnames if d not in EXCLUDE_DIRS and not d.startswith(".")]
-            files += [os.path.join(dirpath, f) for f in filenames if f.endswith(SOURCE_EXTS)]
-    return files
+    """Use the same ignore and extension rules as the content searches."""
+    return sorted(p for p in rg(["--files", "-0"], roots).split("\0") if p)
 
 
 def counts(pattern, roots, word=False):
@@ -409,14 +358,7 @@ def cache_path(roots):
 
 
 def cache_stamp(files):
-    """Cheap fingerprint of the tree: file count plus the newest mtime."""
-    newest = 0
-    for path in files:
-        try:
-            newest = max(newest, os.stat(path).st_mtime_ns)
-        except OSError:
-            pass
-    return {"version": CACHE_VERSION, "files": len(files), "mtime": newest}
+    return tree_stamp(files, CACHE_VERSION)
 
 
 def read_cache(roots, files):
@@ -460,9 +402,9 @@ def build_index(roots, files, use_cache=True):
 
     `refs` is filtered down to names that something in this tree actually
     declares, because a reference to `String` or `Int` is not a cross-file edge
-    and keeping it would bloat both the cache and the fan-out. The whole thing is
-    cached against the tree's newest mtime, since a research session runs this
-    script several times with different keywords and the parse never changes.
+    and keeping it would bloat both the cache and the fan-out. Cache validity
+    includes every source path and its metadata, so repeated
+    searches reuse the parse only while the source tree is unchanged.
     """
     cached = read_cache(roots, files) if use_cache else None
     if cached is not None:
@@ -680,7 +622,7 @@ def test_partners(files):
     return partners
 
 
-def score_keyword(keyword, files, roots, root, index, files_by_type, referrers, min_fuzzy):
+def score_keyword(keyword, files, roots, root, index, files_by_type, referrers, min_fuzzy, evidence=True):
     """Everything one keyword contributes on its own: score, evidence, vocabulary.
 
     Returned separately per keyword so that several keywords can be combined
@@ -698,7 +640,8 @@ def score_keyword(keyword, files, roots, root, index, files_by_type, referrers, 
     # own primary declaration, then its first textual mention of the keyword, then
     # — best of all — the declaration whose name actually matches.
     hits = {p: (d[0][1], d[0][2]) for p, d in index["decls"].items() if d}
-    hits.update(first_hit(pattern, roots))
+    if evidence:
+        hits.update(first_hit(pattern, roots))
     for path, entries in index["decls"].items():
         for name, line, text in entries:
             if partial.search(name):
@@ -750,11 +693,13 @@ def score_keyword(keyword, files, roots, root, index, files_by_type, referrers, 
     # misspelling or an abbreviation is recoverable: "srvconfig" is 0.86 similar to
     # ServerConfig and under 0.5 to everything else. Fuzzy evidence is discounted
     # by similarity so it always sits below a real match.
-    vocabulary = {stem_of(p) for p in files} | set(files_by_type)
-    ranked_vocab = sorted(
-        ((similarity(keyword, term), term) for term in vocabulary if not partial.search(term)),
-        reverse=True,
-    )
+    ranked_vocab = []
+    if min_fuzzy > 0:
+        vocabulary = {stem_of(p) for p in files} | set(files_by_type)
+        ranked_vocab = sorted(
+            ((similarity(keyword, term), term) for term in vocabulary if not partial.search(term)),
+            reverse=True,
+        )
     fuzzy = dict((t, s) for s, t in ranked_vocab if s >= min_fuzzy) if min_fuzzy > 0 else {}
     fuzzy = dict(sorted(fuzzy.items(), key=lambda kv: -kv[1])[:MAX_FUZZY_TERMS])
 
@@ -810,15 +755,15 @@ def main():
     )
     ap.add_argument("keyword", nargs="*", help="what you are looking for (camelCase or spaced)")
     ap.add_argument("--root", default=None, help="search root (default: . or the last argument)")
-    ap.add_argument("-n", type=int, default=HARD_LIMIT, help=f"files to print (max {HARD_LIMIT})")
+    ap.add_argument("-n", type=int, default=20, help=f"files to print (default: 20, max {HARD_LIMIT})")
     ap.add_argument("--seeds", type=int, default=12, help="direct hits used to fan out (default: 12)")
     ap.add_argument(
         "--depth",
         type=int,
         choices=range(len(FANOUT) + 1),
-        default=len(FANOUT),
+        default=1,
         metavar="{0-%d}" % len(FANOUT),
-        help=f"fan-out hops (default: {len(FANOUT)})",
+        help="fan-out hops (default: 1)",
     )
     ap.add_argument(
         "--fuzzy",
@@ -843,6 +788,7 @@ def main():
     ap.add_argument("--no-evidence", action="store_true", help="omit the matched source lines")
     ap.add_argument("--json", action="store_true", help="emit JSON for jq")
     args = ap.parse_args()
+    validate_options(ap, args)
 
     # `<keyword>... [root]`: the trailing argument is the root when it is a
     # directory that exists, which keeps the old positional form working.
@@ -897,7 +843,7 @@ def main():
     defining = unambiguous_definers(files_by_type)
 
     passes = [
-        score_keyword(kw, files, roots, root, index, files_by_type, referrers, args.fuzzy)
+        score_keyword(kw, files, roots, root, index, files_by_type, referrers, args.fuzzy, evidence=not args.no_evidence)
         for kw in keywords
     ]
 
@@ -1039,7 +985,7 @@ def main():
         seen.update(frontier)
 
     cochange = {}
-    if not args.no_git:
+    if not args.no_git and args.depth > 0:
         weights, cochange, partner = git_cochange(seeds, root, candidates)
         for path, times in cochange.items():
             score[path] += W_COCHANGE * min(weights[path], COCHANGE_CAP)
@@ -1047,9 +993,13 @@ def main():
             plural = f" ({times}×)" if times > 1 else ""
             note_reason(path, f"changed with {partner[path]}{plural}")
 
-    partners = test_partners(files)
+    partners = {} if args.no_tests else test_partners(files)
+    if common is not None:
+        partners = {p: [t for t in tests if t in common] for p, tests in partners.items()}
     ranked = []
     for path, value in score.items():
+        if common is not None and path not in common:
+            continue
         if value <= 0:
             continue
         test = is_test(path)
@@ -1103,7 +1053,7 @@ def main():
                 "mentions": mentions.get(path, 0),
                 "declares": [n for n, _, _ in index["decls"].get(path, ())],
                 "why": why[path][:3],
-                "evidence": hit[1] if hit else None,
+                "evidence": hit[1] if hit and not args.no_evidence else None,
                 "tests": [os.path.relpath(t, root) for t in partners.get(path, ())],
                 "cochange": cochange.get(path, 0),
             }
@@ -1151,7 +1101,7 @@ def main():
     print(f"searched {len(files)} sources under {rel_roots}")
     print("Read top-down; stop as soon as the question is answered.\n")
 
-    width = max(len(r["file"]) + len(str(r["line"] or "")) + 2 for r in rows)
+    width = max((len(r["file"]) + len(str(r["line"] or "")) + 2 for r in rows), default=0)
     width = min(width, 64)
     for tier, (name, blurb) in enumerate(TIERS):
         group = [r for r in rows if min(r["hops"], 2) == tier]

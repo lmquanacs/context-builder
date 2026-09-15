@@ -1,6 +1,6 @@
 # Reading-List Scripts
 
-For Java, Kotlin, Python, and TypeScript/JavaScript repos, one bundled script replaces
+For Java, Kotlin, Python, and TypeScript/JavaScript repos, a bundled script can combine
 rungs 2–4 of the Phase 2 ladder (`fd` on names → `rg -l`/`rg -c` → `ast-grep`
 confirmation). It parses the repo and returns a ranked reading list instead of
 a pile of hits.
@@ -36,7 +36,7 @@ loaded `SKILL.md` (from Codex's skill catalog or Claude Code's
 
 ```bash
 # SKILL_DIR is the loaded skill's directory, not the current project directory.
-"$SKILL_DIR/scripts/bootstrap.sh"                              # once per machine
+"$SKILL_DIR/scripts/bootstrap.sh"                              # only if dependencies are missing
 "$SKILL_DIR/scripts/search-java-sources.py"   <keyword>... [root]
 "$SKILL_DIR/scripts/search-kotlin-sources.py" <keyword>... [root]
 "$SKILL_DIR/scripts/search-python-sources.py" <keyword>... [root]
@@ -50,13 +50,14 @@ the scripts re-exec into that venv themselves.
 
 ## Reading the output
 
-At most 200 files, numbered in reading order and tiered:
+By default, 20 files and one relationship hop; `-n` can raise the cap to 200
+and `--depth` can request up to five hops. Numbered in reading order and tiered:
 
 | Tier | Means |
 |---|---|
-| **READ FIRST** | Found by a strong relation — subtyping, calls, renders |
-| **THEN** | Found by a weaker edge — imports, co-change |
-| **SKIM IF NEEDED** | Bare mentions |
+| **READ FIRST** | Direct keyword matches or primary fuzzy matches |
+| **THEN** | One-hop neighbours, fuzzy references, or co-change |
+| **SKIM IF NEEDED** | Two or more hops from the starting files |
 
 Every tier carries a line count, so you know what you're signing up for before
 you open anything. Read top-down and **stop when the question is answered** —
@@ -87,7 +88,7 @@ config file that no type reference points at.
 `--json` carries all of it per file, for when you want to filter with `jq`
 rather than read.
 
-## Why this is the first move, not a fallback
+## When ranked discovery helps
 
 - **It is fuzzy, so a wrong guess still lands.** Matching runs against the
   repo's own vocabulary: `srvconfig` finds `ServerConfig` (0.86), `McpServelt`
@@ -108,21 +109,36 @@ rather than read.
 
 | Flag | Use when |
 |---|---|
-| `--all` | Multiple keywords must all appear — narrowing an over-wide result |
+| `--all` | Every source result must match each keyword (including fuzzy matches unless `--fuzzy 0`) |
 | `--from-file PATH` | Seed from a file rather than a keyword |
-| `--depth 0` | Direct hits only, no relation expansion |
+| `--depth 0` | Direct hits only; skips relationship and git expansion |
 | `--no-tests` | Test files are drowning the list |
-| `-n <N>` | Cap the list shorter than 200 |
-| `--fuzzy <0–1>` | Move the similarity bar (0.8 default); lower to catch worse guesses |
+| `-n <N>` | Limit results (default 20, maximum 200; 0 prints no source rows) |
+| `--fuzzy <0–1>` | Move the similarity bar (0.8 default); 0 skips fuzzy computation |
 | `--json` | Machine-readable, all evidence per file |
-| `--no-git` / `--no-evidence` / `--no-cache` | Cut passes when a run is slow |
+| `--no-git` | Skip history lookup |
+| `--no-evidence` | Skip textual evidence lookup and omit evidence in text/JSON |
+| `--no-cache` | Force reparsing to diagnose cache issues; usually slower |
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| `tree_sitter is required by this script` | Bootstrap has not run. Run `scripts/bootstrap.sh` and retry — **do not** fall back to the ladder |
+| `tree_sitter is required by this script` | Bootstrap has not run. Run `scripts/bootstrap.sh` if feasible; otherwise use scoped searches and reads |
 | Nothing clears the fuzzy bar | Read the error: it names the closest identifiers in the repo. That is your vocabulary answer |
 | Result is too wide | Add a second keyword with `--all`, or `--depth 0` |
 | Result is all tests | `--no-tests` |
 | Language is not Java/Kotlin/Python/TS/JS | Use the Phase 2 ladder in SKILL.md; there is no script for it |
+
+## Scope and cache
+
+All eligible sources under the requested root are searched, respecting ripgrep's
+ignore rules and the scripts' generated/vendor exclusions. Conventional `src`,
+`app`, or `tests` directories do not hide sibling sources. Pass a narrower root
+when the task is confined to a package.
+
+`search_common.py` shares option validation and cache fingerprints across the four
+scripts. The fingerprint includes sorted file paths, sizes, modification times,
+and change times. An unchanged tree reuses its parsed index; a changed tree is
+reparsed. Config/resource mentions are a separate supplemental list and can match
+any keyword, even with `--all`; the intersection applies to source results.

@@ -7,9 +7,6 @@ description: Discover, verify, and shape the minimum context needed before actin
 
 Build context before you act. Four phases: **Frame → Discover → Reflect → Shape**.
 
-Frame the task as questions. Discover evidence cheaply. Reflect on whether to
-continue or stop. Shape what you found into a pack.
-
 ## Host compatibility (Codex and Claude Code)
 
 Resolve all bundled paths relative to the directory containing this loaded
@@ -25,21 +22,29 @@ Discovery budgets limit investigation, not completion of the user's task:
 after shaping context, continue the authorized work unless the user requested
 only a context pack.
 
+## Choose the smallest workflow
+
+- **Known file and explicit edit:** read the relevant range and act. No discovery
+  round, tool inventory, ledger, or context pack is needed unless an unknown
+  dependency affects the change.
+- **Exact symbol, error, or endpoint:** start with a scoped literal search. Read
+  the useful hit directly; do not run a directory tour first.
+- **Ambiguous name or cross-file relationships:** use the discovery loop below.
+  The reading-list scripts help when ranking candidates will save reading.
+
 ## Budget rules
 
-- Search is cheap; reading is expensive. One `rg` costs a few hundred tokens and
-  tells you which of 400 files matter. Four wrong reads cost 20k and tell you
-  nothing.
-- Spend more on search than feels necessary so you can spend less on reads.
-- A 50k context of noise performs *worse* than a 3k context of signal, at 15×
-  the price. Cut irrelevant tokens, don't just add relevant ones.
-- No single search is expensive, so a stalled investigation won't announce
-  itself. Cap it in Phase 3.
-- Per-command costs: `references/discovery-recipes.md`.
+- Budget both tool runtime and context size. A repository-wide parse or history
+  scan can cost more than a scoped search; widen only when evidence requires it.
+- Search to narrow the candidates, then read enough to answer the live question.
+  Do not repeat searches just to complete a checklist.
+- Keep enough context and time for implementation and validation after discovery.
+- Per-command guidance: `references/discovery-recipes.md`.
 
 ## Phase 1 — Frame
 
-Open no files yet. Write down three things.
+For a discovery task, identify three things before broad reading. Keep these
+internal for small tasks; share a compact plan when the task benefits from one.
 
 **1. Context questions.** Questions with checkable answers, not topics. Three to
 seven is normal.
@@ -47,9 +52,6 @@ seven is normal.
 - Bad: "understand the auth system"
 - Good: "Where is the session token validated?" / "What happens on expiry?" /
   "Is there existing retry logic I'd be duplicating?"
-
-If you can't name a question, you don't know what you're looking for — any file
-you open is a guess.
 
 **2. Success shape.** What the acting agent produces: a patch, a review, a
 design. This decides what context is relevant.
@@ -88,18 +90,19 @@ Escalate to Semgrep for dataflow — it's the only tool here that answers whethe
 value *reaches* something. It isn't one of the six: check `command -v semgrep`
 only when a flow question arises, and log the question as open if it's absent.
 
-Run `command -v tree fd rg ast-grep jq yq` once per session. If one is missing,
-say so before falling back. Never silently degrade to `find`, `grep`, recursive
-`ls`, or a regex rewrite.
+Check availability only for tools the next step needs, and reuse that result.
+Use an available equivalent when appropriate; mention a fallback when it changes
+coverage or confidence. A missing optional tool must not block ordinary work.
 
 Flags, `ast-grep` gotchas, taint rules, fallbacks: `references/tool-cookbook.md`.
 
 ### Climb the ladder
 
-Each rung costs ~10× the one below. Exhaust a rung before going up.
+Start at the cheapest rung that answers the question. Skip irrelevant rungs;
+these are choices, not mandatory stages.
 
-1. **Structure** — `tree -L 2 -I '.git|node_modules|build|dist|target'` on any
-   unfamiliar directory. The shape of the world for ~200 tokens.
+1. **Structure** — `tree -L 2 -I '.git|node_modules|build|dist|target'` when directory
+   structure is itself an open question. Scope large directory trees first.
 2. **Paths** — `fd` on names: `**/*repository*`, `**/*.config.*`. Names encode
    intent; use them before content.
 3. **Content** — `rg -l` / `rg -c` for *which* and *how many* files before
@@ -113,9 +116,8 @@ Each rung costs ~10× the one below. Exhaust a rung before going up.
    *this* window, send the reading to a subagent instead. Its reads cost its
    context, not yours; what comes back is a page of anchors.
 
-Rung 7 is the one rung that doesn't cost 10× the one below — it costs a cold
-start. A subagent re-derives what you already know, so it loses on anything
-small. Delegate when the read volume is real: give it your Phase 1 questions
+Delegation adds startup and coordination costs. Use it only when permitted and
+the independent read volume justifies those costs. Give it your Phase 1 questions
 verbatim, name the tier, and require the Findings format from Phase 4 —
 `[verified] claim — path:line`. A subagent asked to "look into" something
 returns prose you then have to verify, which is worse than reading it yourself.
@@ -129,19 +131,19 @@ returns prose you then have to verify, which is worse than reading it yourself.
   config, directory structure. Build a map, then anchor.
 
 Follow references one hop at a time. From an anchor, take the interface it
-implements, its direct caller, and its configuration. Not its tests, not its
-siblings, not the whole package.
+implements, its direct caller, and its configuration as needed. Read focused
+tests when they establish the behaviour or regression that the task concerns.
 
-### Java, Kotlin, Python, TS/JS: run the bundled script instead of rungs 2–4
+### Java, Kotlin, Python, TS/JS: ranked discovery when needed
 
-One command does the whole narrowing pass: `search-java-sources.py` (`.java`),
+When a scoped search leaves ambiguous candidates or you need relationships, use: `search-java-sources.py` (`.java`),
 `search-kotlin-sources.py` (`.kt`/`.kts`), `search-python-sources.py`
 (`.py`/`.pyi`), `search-ts-sources.py` (`.ts`/`.tsx`/`.js`/`.jsx`). Not on
 `PATH` — invoke by path:
 
 ```bash
 # Set SKILL_DIR to the absolute directory containing this loaded SKILL.md.
-"$SKILL_DIR/scripts/bootstrap.sh"                          # once per machine
+"$SKILL_DIR/scripts/bootstrap.sh"                          # only if parser dependencies are missing
 "$SKILL_DIR/scripts/search-ts-sources.py" <keyword>... [root]   # or -python-, -java-, -kotlin-
 ```
 
@@ -154,16 +156,17 @@ Matching is fuzzy against the repo's own vocabulary, so a guessed or misspelled
 name still lands. Use it instead of spending a round on synonyms.
 
 On `tree_sitter is required by this script`, run `scripts/bootstrap.sh` and
-retry. Don't fall back to the ladder. For other languages, use the ladder.
+retry if setup is feasible. If installation is unavailable, use scoped text
+searches and reads, and label unverified structural relationships. For other
+languages, use the ladder.
 
 Output format, evidence columns, `--all` / `--from-file` / `--depth` and the rest
 of the flags, troubleshooting: `references/reading-list-scripts.md`.
 
 ## Phase 3 — Reflect
 
-Don't skip this. Skipping it is why packs come out both incomplete and bloated.
-
-After every discovery round, write a ledger:
+Track question status after each round. For Standard/Deep discovery, keep a
+compact ledger; update changed entries rather than repeatedly printing the table:
 
 | # | Question | Status | Evidence |
 |---|---|---|---|
@@ -202,13 +205,16 @@ with plausible invention.
 
 ### Stop when
 
-Whichever comes first: all questions answered, a round changed no statuses, or
-the tier budget is spent. Stop early, before the budget is spent, when:
+Stop discovery when the live questions are answered or its budget is spent.
+A round with no progress ends that search direction, not every other question.
+Use a specific alternative hypothesis within the three-round budget when useful.
 
-- **The term returns zero hits anywhere**, including `-i -u`. The word doesn't
-  exist in this repo. No further searching invents the mapping.
-- **Two readings both have real hits.** That's ambiguity, not a search problem.
-- **Narrowing twice still leaves 100+ hits.** Ask which subsystem, not which regex.
+- **Zero textual hits** rule out that spelling in the searched scope, not the
+  concept. Check coverage and a plausible structural or synonymous alternative.
+- **Several candidates** call for checking callers, configuration, or focused
+  tests when those can distinguish them. Ask only when intent remains unknown.
+- **Narrowing still leaves 100+ hits:** use the task's entry point or subsystem;
+  ask which subsystem only if available evidence cannot establish it.
 - **The answer depends on intent that isn't in the code** — which design they
   want, whether a behavior is a bug or deliberate.
 
@@ -219,7 +225,8 @@ Context pressure changes what to do next, not just how much of it to do.
 - **Shape early.** Write the pack now, from what you have. A pack survives
   compaction; scrollback doesn't.
 - **Re-anchor, don't re-read.** After a compaction the pack *is* your context.
-  Cite it. Re-opening a file you already summarized pays for it twice.
+  Cite it. Re-open only the relevant range when edits or uncertainty make the saved
+  evidence stale.
 - **Delegate what's left** (rung 7), with the pack as the subagent's brief.
 - **Never spend the last of the window on discovery.** Leave enough room to act,
   or you finish with perfect context and no budget to use it.
@@ -233,8 +240,6 @@ the specific choice:
 > `rg -lw 'sessionToken'` finds nothing. The closest things are `authToken` in
 > [auth/session.ts:18](auth/session.ts#L18) and `refreshToken` in
 > [auth/refresh.ts:40](auth/refresh.ts#L40). Which is the one that's expiring early?
-
-That's answerable in three words. "Where is the session code?" is not.
 
 Don't ask before running round 1 — most questions die there. Don't ask what's
 derivable from what you've read. Don't ask a routine judgment call a colleague
@@ -257,40 +262,21 @@ Write a briefing, not an archive.
   (conventions, schemas, map) first and volatile material (current task, latest
   findings) last. A stable prefix is a cacheable prefix.
 
-### Standard pack template
+### Pack structure
 
-```markdown
-# Context: <task>
+For Standard/Deep discovery, use these sections and omit empty ones:
 
-## Objective
-<one or two sentences: what the acting agent must produce>
+- **Objective:** what the acting agent must produce.
+- **Constraints:** conventions and behaviour that must be preserved.
+- **Map:** relevant paths and their roles.
+- **Findings:** `[verified] claim — path:line`; label inferences and their basis.
+- **Excerpts:** only exact syntax needed for action.
+- **Open questions:** unknowns and likely places to resolve them.
+- **Not included:** deliberately excluded scope to avoid repeating searches.
+- **Next action:** the first concrete step.
 
-## Constraints
-<conventions, versions, style rules, things that must not break>
-
-## Map
-<path> — <one line: what it does, why it's here>
-
-## Findings
-- [verified] <claim> — `path:line`
-- [inferred] <claim> — basis: <what you're inferring from>
-
-## Excerpts
-<only where exact syntax matters; smallest span that carries the meaning>
-
-## Open questions
-- <what's unknown> — <where it probably lives>
-
-## Not included
-<what you searched and deliberately left out, so nobody re-searches it>
-
-## Next action
-<the single first step>
-```
-
-Drop empty sections; don't write "N/A". For Micro tier, Objective + Findings +
-Next action is the whole pack. Run the self-check in
-`references/pack-templates.md` before handing off.
+Micro discovery needs only Objective, Findings, and Next action. Routine edits
+need no pack. Templates and handoff self-check: `references/pack-templates.md`.
 
 ## Anti-patterns
 
@@ -298,7 +284,7 @@ Next action is the whole pack. Run the self-check in
 |---|---|
 | Reading files to "get oriented" | Search for the task's own words first |
 | Reading the whole file | Read the range the hit is in |
-| Reading tests to learn the API | Read the interface; tests are 5× the tokens |
+| Reading every test to learn an API | Read its interface, then focused tests for behaviour |
 | Printing match bodies on the first pass | `rg -l` / `rg -c` to size the blast radius |
 | A fourth synonym after three rounds | Stop: ask, or log it as an open question |
 | Pasting large excerpts | Anchor + one-line claim |
