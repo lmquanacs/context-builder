@@ -107,7 +107,8 @@ ungraded=$(fd -t d -d 1 '^[0-9]' evals 2>/dev/null \
 
 echo
 if [[ "$fails" -eq 0 ]]; then
-  echo "all mechanical checks passed — behaviour is scored by: claude plugin eval ."
+  echo "all mechanical checks passed — behavioural scenarios and graders are in evals/."
+  echo "Claude Code runner: claude plugin eval .; in Codex, run the scenarios manually."
 else
   echo "$fails check(s) failed"
 fi

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Context Builder"
+  short_description: "Find and verify the code context needed for a task"
+  default_prompt: "Use $context-builder to find and verify the context needed for this task, then continue with the requested work."

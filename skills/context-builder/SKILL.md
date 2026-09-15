@@ -10,6 +10,21 @@ Build context before you act. Four phases: **Frame → Discover → Reflect → 
 Frame the task as questions. Discover evidence cheaply. Reflect on whether to
 continue or stop. Shape what you found into a pack.
 
+## Host compatibility (Codex and Claude Code)
+
+Resolve all bundled paths relative to the directory containing this loaded
+`SKILL.md`. Set `SKILL_DIR` to that absolute directory before running examples;
+do not assume a user-level install. Claude Code may provide `CLAUDE_SKILL_DIR`;
+in Codex, use the skill file path supplied in the skills catalog.
+
+Use the host's file-reading tool, or a ranged shell read such as
+`sed -n '40,90p' path/to/file`, wherever this skill says to read a file.
+Delegate only when subagents are available and permitted by the session;
+otherwise process bounded batches locally and retain a compact findings pack.
+Discovery budgets limit investigation, not completion of the user's task:
+after shaping context, continue the authorized work unless the user requested
+only a context pack.
+
 ## Budget rules
 
 - Search is cheap; reading is expensive. One `rg` costs a few hundred tokens and
@@ -62,7 +77,7 @@ Needs more than Deep? The task is too big. Split it, one pack per piece.
 | Does a value *reach* a sink (flow, not shape)? | `semgrep` taint mode |
 | Something emitted JSON | `jq` |
 | Something is YAML (config, CI, compose) | `yq` |
-| I have <10 candidate files and need to understand them | the `Read` tool |
+| I have <10 candidate files and need to understand them | a file-reading tool or ranged shell read |
 | I have >10, and the reading *is* the work | a subagent, briefed (below) |
 
 Use `rg` for text and `ast-grep` for structure. Switch to `ast-grep` the moment a
@@ -125,7 +140,7 @@ One command does the whole narrowing pass: `search-java-sources.py` (`.java`),
 `PATH` — invoke by path:
 
 ```bash
-SKILL_DIR="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/context-builder}"
+# Set SKILL_DIR to the absolute directory containing this loaded SKILL.md.
 "$SKILL_DIR/scripts/bootstrap.sh"                          # once per machine
 "$SKILL_DIR/scripts/search-ts-sources.py" <keyword>... [root]   # or -python-, -java-, -kotlin-
 ```
@@ -312,5 +327,5 @@ matching one: `01-before-debugging`, `02-before-planning-implementing`,
 `03-before-reviewing-code`, `04-before-refactoring`, `05-for-documentation`,
 `06-for-improvement-research`.
 
-Never read a pager-backed command's output into context. Use `Read` for files,
+Never read a pager-backed command's output into context. Use ranged reads for files,
 and disable paging explicitly (`git --no-pager diff`) or it blocks forever.

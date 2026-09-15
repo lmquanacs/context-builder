@@ -30,7 +30,8 @@ and introduces typos that silently change the result.
   directory. **Create it yourself when it doesn't exist** (`mkdir -p .scripts`) —
   don't ask, don't fall back to running inline.
 - **Don't re-create what ships with this skill.**
-  `${CLAUDE_SKILL_DIR}/scripts/search-java-sources.py` and its Kotlin, Python
+  `$SKILL_DIR/scripts/search-java-sources.py` (resolve `SKILL_DIR` as described
+  in `SKILL.md`) and its Kotlin, Python
   and TS twins already cover "which files should I read for X" in Java, Kotlin,
   Python and TS/JS repos — call them, don't write a smaller version into
   `.scripts/`.

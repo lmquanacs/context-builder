@@ -1,6 +1,6 @@
 # context-builder
 
-Personal Claude Code tooling.
+Personal Claude Code and Codex tooling.
 
 ## Skills
 
@@ -71,7 +71,7 @@ standalone just as well.
 skills/context-builder/scripts/search-java-sources.py <keyword>... [root] \
   [-n 200] [--depth 5] [--fuzzy 0.8] [--all] [--no-tests] [--from-file PATH] [--json]
 
-# once the skill is installed, the copies on hand are:
+# Claude Code user install (for Codex, replace ~/.claude with ~/.agents):
 ~/.claude/skills/context-builder/scripts/search-java-sources.py AuthToken ~/work/api
 ~/.claude/skills/context-builder/scripts/search-kotlin-sources.py AuthToken ~/work/api
 ~/.claude/skills/context-builder/scripts/search-python-sources.py AuthToken ~/work/api
@@ -81,10 +81,9 @@ skills/context-builder/scripts/search-java-sources.py <keyword>... [root] \
   | jq -r '.results[] | select(.tier=="READ FIRST") | .file'
 ```
 
-From inside the skill body, they are invoked as
-`${CLAUDE_SKILL_DIR}/scripts/search-java-sources.py` — Claude Code substitutes
-that variable with the skill's own directory, so the path works whether the skill
-is installed personally, per-project, or symlinked.
+Inside the skill, scripts resolve relative to the loaded `SKILL.md`: Codex
+supplies that file path in its skill catalog, and Claude Code provides
+`CLAUDE_SKILL_DIR`. This supports personal, project, and symlinked installs.
 
 ```
 Reading list for 'mcp server' — 7 files, ~1,159 lines to read
@@ -212,6 +211,32 @@ question as open if it's missing. Regex is not a fallback for dataflow.
 
 ## Installing the skill
 
+### Codex
+
+```bash
+./install.sh --codex                       # ~/.agents/skills, all projects
+./install.sh --codex --project ~/code/app  # project's .agents/skills
+./install.sh --codex --copy                # standalone copy, pin this version
+```
+
+The installer links or copies the shared skill, installs its parser dependencies,
+and runs the mechanical checks. Invoke it in Codex with `$context-builder`,
+or select it using `/skills`. If it does not appear, restart Codex.
+Codex supports symlinked skills in these locations; see the
+[official skill documentation](https://learn.chatgpt.com/docs/build-skills).
+
+The same `SKILL.md`, references, prompts, and Python scripts serve both agents.
+`agents/openai.yaml` supplies Codex display metadata. The Claude plugin manifest
+and `claude plugin eval` runner are Claude-specific; Codex can run the bundled
+eval prompts manually against their graders. Mechanical checks run in either
+environment. No global Codex configuration changes are needed.
+
+The standalone script examples elsewhere in this README use Claude's user
+path. For a Codex user install, replace `~/.claude/skills` with
+`~/.agents/skills`; for a project install, use that project's skill directory.
+
+### Claude Code (default)
+
 Claude Code discovers skills in two places: `~/.claude/skills/` (available in
 every project) and `<project>/.claude/skills/` (that project only). The command
 you type comes from the **directory name**, so the installed directory must be
@@ -236,10 +261,10 @@ Re-running it is how you reinstall. An existing same-name skill is cleared
 first — a symlink is dropped, while a real directory might hold edits this repo
 has never seen, so that one is moved to `<name>.bak-<timestamp>` and the path is
 printed for you to delete. If you install to project scope while a user-scope
-copy exists, it says so: project scope wins, and the other is silently shadowed
-otherwise.
+copy exists, it says so. In Claude Code, project scope wins; in Codex, both
+same-name skills can appear in the selector.
 
-The rest of this section is the same thing by hand.
+The rest of this section shows the Claude Code installation by hand.
 
 ### 1. Make it visible to Claude
 

@@ -30,10 +30,12 @@ rather than merely naming it.
 
 ## Invocation
 
-They are not on `PATH`. Invoke by path from the skill's own directory:
+They are not on `PATH`. Set `SKILL_DIR` to the absolute directory containing the
+loaded `SKILL.md` (from Codex's skill catalog or Claude Code's
+`CLAUDE_SKILL_DIR`), then invoke by path. This also works for project installs:
 
 ```bash
-SKILL_DIR="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/context-builder}"
+# SKILL_DIR is the loaded skill's directory, not the current project directory.
 "$SKILL_DIR/scripts/bootstrap.sh"                              # once per machine
 "$SKILL_DIR/scripts/search-java-sources.py"   <keyword>... [root]
 "$SKILL_DIR/scripts/search-kotlin-sources.py" <keyword>... [root]

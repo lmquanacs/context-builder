@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# Install the skills in this repo for Claude Code.
+# Install the skills in this repo for Claude Code or Codex.
 #
 #   ./install.sh                      symlink into ~/.claude/skills (all projects)
 #   ./install.sh --project ~/code/app symlink into that project's .claude/skills
 #   ./install.sh --copy               copy instead of symlink, to pin a version
+#   ./install.sh --codex              symlink into ~/.agents/skills for Codex
+#   ./install.sh --codex --project ~/code/app  use that project's .agents/skills
+#   ./install.sh --claude             explicitly select Claude Code (default)
 #
 # An existing install of the same name is removed first, so re-running is how
 # you reinstall. A symlink is just dropped; a real directory might hold someone's
@@ -19,7 +22,8 @@ set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 skills=(context-builder)   # add new skill directory names here
 
-dest_root="$HOME/.claude/skills"
+agent="claude"
+project_root=""
 scope="user"
 mode="symlink"
 
@@ -28,16 +32,25 @@ while [[ $# -gt 0 ]]; do
     --project)
       [[ -n "${2:-}" ]] || { echo "error: --project needs a path" >&2; exit 1; }
       [[ -d "$2" ]] || { echo "error: no such directory: $2" >&2; exit 1; }
-      dest_root="$(cd "$2" && pwd)/.claude/skills"
+      project_root="$(cd "$2" && pwd)"
       scope="project"
       shift 2 ;;
     --copy)  mode="copy";  shift ;;
+    --codex) agent="codex"; shift ;;
+    --claude) agent="claude"; shift ;;
     -h|--help)  # the header comment block, so help can't drift from the source
       awk 'NR>1 && /^#/{sub(/^# ?/,""); print; next} NR>1{exit}' "${BASH_SOURCE[0]}"
       exit 0 ;;
     *) echo "error: unknown argument: $1" >&2; exit 1 ;;
   esac
 done
+
+if [[ "$agent" == "codex" ]]; then
+  skills_dir=".agents/skills"
+else
+  skills_dir=".claude/skills"
+fi
+dest_root="${project_root:-$HOME}/$skills_dir"
 
 echo "installing into $dest_root ($scope scope, $mode)"
 mkdir -p "$dest_root"
@@ -47,8 +60,7 @@ for skill in "${skills[@]}"; do
   dest="$dest_root/$skill"
   [[ -d "$src" ]] || { echo "error: $src is not in this repo" >&2; exit 1; }
 
-  # Clear any same-name skill already installed here. Claude Code keys a skill
-  # off its directory name, so a leftover one would win or shadow this install.
+  # Replace the same-name skill at this destination, preserving local edits.
   if [[ -L "$dest" ]]; then
     current="$(readlink "$dest")"
     if [[ "$current" == "$src" ]]; then
@@ -61,6 +73,7 @@ for skill in "${skills[@]}"; do
     # A real directory can hold edits this repo has never seen. Move it aside
     # instead of deleting it, and print where it went.
     backup="$dest.bak-$(date +%Y%m%d-%H%M%S)"
+    while [[ -e "$backup" || -L "$backup" ]]; do backup="$backup-$$-$RANDOM"; done
     echo "  found an existing $skill directory (not a symlink)"
     echo "  moved it to $backup — delete that yourself once you've checked it"
     mv "$dest" "$backup"
@@ -80,14 +93,18 @@ done
 # Not ours to delete — the user may want it — but silence here is a debugging trap.
 for skill in "${skills[@]}"; do
   if [[ "$scope" == "project" ]]; then
-    other="$HOME/.claude/skills/$skill"; other_scope="user"
+    other="$HOME/$skills_dir/$skill"; other_scope="user"
   else
     other=""; other_scope=""
   fi
   if [[ -n "$other" && -e "$other" ]]; then
     echo "note: a $skill skill is also installed at $other_scope scope ($other)."
-    echo "      Project scope wins, so that one is now shadowed. Remove it if"
-    echo "      you no longer want it."
+    if [[ "$agent" == "codex" ]]; then
+      echo "      Codex may show both in the skill selector; remove any unwanted duplicate."
+    else
+      echo "      Project scope wins, so that one is now shadowed. Remove it if"
+      echo "      you no longer want it."
+    fi
   fi
 done
 
@@ -111,8 +128,13 @@ done
 
 echo
 if [[ "$status" -eq 0 ]]; then
-  echo "done. Start a new Claude Code session — skills load at session start, so"
-  echo "an already-running one will not see this. Then try /context-builder."
+  if [[ "$agent" == "codex" ]]; then
+    echo 'done. In Codex, try $context-builder or select it with /skills.'
+    echo 'If it does not appear, restart Codex.'
+  else
+    echo "done. Start a new Claude Code session — skills load at session start, so"
+    echo "an already-running one will not see this. Then try /context-builder."
+  fi
 else
   echo "installed, but the checks above found problems — fix those before use." >&2
 fi
