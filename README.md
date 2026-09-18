@@ -353,14 +353,16 @@ non-zero on the first thing it finds, so it also works as a commit gate.
 
 ## Use case prompt templates
 
-Six prompts for the situations the skill is built for. Each one names the skill
-so it loads, states a **budget tier** so it doesn't over-read, and asks for a
-specific **output shape** so what comes back is a briefing rather than a
+Six general workflow prompts cover the situations the skill is built for. A
+dedicated Kotlin backend and Spring Boot folder provides three self-contained
+prompts for design, planning/implementation, and code review. Each prompt names
+the skill so it loads, states a **budget tier** so it doesn't over-read, and asks
+for a specific **output shape** so what comes back is a briefing rather than a
 transcript of the search.
 
 Fill the `<angle brackets>` and delete any line that doesn't apply. The two lines
 that carry the most weight are the tier and the output shape — leave them out and
-Claude picks its own, and the default instinct is always "read more files."
+the agent picks its own, and the default instinct is always "read more files."
 
 Every template ends by **writing its result to a markdown file**. That line is
 not decoration: a pack that only exists in scrollback has to be rebuilt from
@@ -368,7 +370,7 @@ scratch next session, and rebuilding it costs the same tokens as building it did
 Written to a file, it survives a `/clear`, gets read by the next agent for a few
 hundred tokens, and can be diffed as the work moves.
 
-Each template is also on disk as a standalone file, ready to copy whole:
+Each workflow is on disk as a standalone file, ready to copy whole:
 
 | # | Use | File |
 |---|---|---|
@@ -388,264 +390,41 @@ Each template is also on disk as a standalone file, ready to copy whole:
 Anything that won't fit in Deep is too big for one pass — split it and run one
 prompt per piece.
 
-### 1. Before debugging
+### Canonical prompt set
 
-Keeps the investigation from starting at the fix. The key constraint is the last
-line: a cause proposed before the ledger exists is a guess wearing evidence.
+The standalone files are the source of truth. They use one consistent shape
+adapted from principal-level engineering review prompts:
 
-```text
-Use context-builder before touching anything.
+1. explicit repository, scope, intent, acceptance criteria, and constraints;
+2. context-builder discovery before conclusions or edits;
+3. a ranked, task-specific checklist;
+4. evidence and verification standards that separate facts, inferences, and
+   assumptions; and
+5. a durable result file with validation, limitations, and open questions.
 
-Symptom: <what happens — paste the error verbatim if there is one>
-Expected: <what should happen instead>
-Repro: <steps, or the name of the failing test>
-Where I think it lives (may be wrong): <path or subsystem, or "no idea">
+| Prompt | Primary use | Mutation policy | Result |
+|---|---|---|---|
+| [Debugging investigation](skills/context-builder/prompts/01-before-debugging.md) | Diagnose a concrete failure | Diagnosis only | `debug-result.md` |
+| [Software design and implementation](skills/context-builder/prompts/02-before-planning-implementing.md) | Design, plan, or implement a change | Controlled by `Mode` | `plan-result.md` plus authorized code changes |
+| [Evidence-based code review](skills/context-builder/prompts/03-before-reviewing-code.md) | Review a diff or current code | Review only | `review-result.md` |
+| [Refactoring design and execution](skills/context-builder/prompts/04-before-refactoring.md) | Map and sequence a refactor | Plan-only by default; `implement` is explicit | `refactor-result.md` |
+| [Technical documentation](skills/context-builder/prompts/05-for-documentation.md) | Research and write accurate docs | Documentation files only | `<topic>.md` and `doc-result.md` |
+| [Engineering improvement research](skills/context-builder/prompts/06-for-improvement-research.md) | Rank repository-specific opportunities | Research only | `improvement-result.md` |
 
-Frame the questions first, then discover. Budget: Standard.
-Search the literal error string before anything else, and walk the value
-backward to its write site rather than forward from the symptom.
-If the trail turns into "does this value actually reach that call", stop
-regexing and write a throwaway `semgrep` taint rule scoped to the package. If
-semgrep isn't installed, say so and leave that question open.
+For Kotlin Spring Boot backends, use one complete prompt from the dedicated
+folder rather than composing separate technology fragments:
 
-Give me back:
-- a ledger: question / status / evidence
-- findings as `path:line` anchors, each labelled [verified] or [inferred]
-- the 2-3 most likely causes, ranked, each tied to a specific anchor
-- anything you could not determine, under Open questions
+| Prompt | Primary use | Mutation policy | Result |
+|---|---|---|---|
+| [Design](skills/context-builder/prompts/kotlin-backend-spring-boot/01-design.md) | Architecture and detailed design | Design only | `design-result.md` |
+| [Plan and implement](skills/context-builder/prompts/kotlin-backend-spring-boot/02-plan-implement.md) | Implementation planning or coding | Controlled by `Mode`; plan-only by default | `implementation-result.md` plus authorized code changes |
+| [Code review](skills/context-builder/prompts/kotlin-backend-spring-boot/03-code-review.md) | Review a change across the complete stack | Review only | `review-result.md` |
 
-Do not propose a fix in this turn, and do not open files that no question needs.
-
-Write the results to `debug-result.md`: the ledger, the findings, and the ranked
-causes. I want it on disk before we discuss the fix.
-```
-
-### 2. Before planning and implementing
-
-The "am I duplicating something" question is the one that pays for this prompt
-outright — it is also the one that never gets asked without prompting.
-
-```text
-Use context-builder, then plan. Don't write code in this turn.
-
-Goal: <the change, in one sentence>
-Constraints I already know: <versions, what must not break, style rules>
-
-Discovery must answer at minimum:
-- Is there existing code that already does this, that I would be duplicating?
-- What is the convention here for <the kind of thing being added>?
-  Look at three similar files, not one — one file might be the outlier.
-  Check the existing unit and integration tests first — if the conventions are
-  already enforced as tests, those are the answer, and my change keeps them
-  green.
-- What is the blast radius of touching <symbol or module>?
-- Where do the tests for this area live?
-
-Budget: Standard. Raise to Deep only if the blast radius count justifies it.
-
-Give me back a standard pack — Objective, Constraints, Map, Findings with
-`path:line`, Open questions, Not included — and then a numbered plan where
-every step cites an anchor from the Findings. Flag any step that rests on an
-[inferred] claim rather than a [verified] one.
-
-Write both to `plan-result.md` — the pack first, the plan after it. That file is
-what I'll hand back to you when we start implementing, so it has to stand alone.
-```
-
-### 3. Before reviewing code
-
-A diff read in isolation is the main source of confident-but-wrong review
-findings. This ordering forces the caller context to be gathered before any
-judgement is allowed.
-
-Comments come out in [Conventional Comments](https://conventionalcomments.org/)
-format — `<label> [decorations]: <subject>`. The label does real work beyond
-tidiness: it forces a decision about *what kind* of feedback each comment is,
-and `question:` gives uncertainty somewhere to go that isn't a padded `issue:`.
-Blocking versus non-blocking stops being tone the author has to infer, and the
-output stays greppable.
-
-```text
-Use context-builder in review-pack mode: evidence before judgement.
-
-Under review: <PR number, branch, or `git diff main...HEAD`>
-What it claims to do: <the PR description, one line>
-I care most about: <correctness / performance / security / API surface / all>
-
-Start from `git diff --stat` and `git log --oneline -8` on the touched paths.
-For every changed file, find its callers before judging the change. Budget: Standard.
-If I said security above, run semgrep taint mode over the touched paths first:
-an issue: (security) has to name a source, a sink, and the path between them.
-No semgrep on PATH — say so, and those comments are question:, not issue:.
-
-Give me back, in this order:
-1. What changed — the diff summarized, no opinions yet
-2. The context each change lands in — `path:line` anchors for callers,
-   contracts, and the existing conventions the change should be matching
-3. Only then the review comments, in Conventional Comments format
-4. Open questions — things that need the author, not more searching
-
-Format every comment as:
-
-    <label> [decorations]: <subject>
-
-    [discussion]
-
-- label — one of praise, nitpick, suggestion, issue, todo, question, thought,
-  chore, note. Use typo, polish or quibble if one of them fits better.
-- subject — the point itself, one line.
-- decorations — parenthesised, comma-separated. Always carry (blocking) or
-  (non-blocking); add a topic decoration such as (security), (test), (perf),
-  (ux) where it classifies further. Keep the list short — a comment wearing
-  four decorations has stopped being readable.
-- discussion — optional, but required on anything (blocking): the why, and
-  what resolving it looks like.
-
-Label rules I care about:
-- issue: only for a problem you can state as a concrete failure — specific
-  input or state -> wrong output. Pair it with a suggestion: for the fix.
-- question: when you suspect a problem but cannot demonstrate it. Do not
-  promote a suspicion to issue: to make it land harder; that is how reviews
-  lose credibility.
-- nitpick:, thought:, note: are non-blocking by nature. Never mark them blocking.
-- praise: at least one, and only where it is sincere. Skip it rather than
-  manufacture it.
-- Every comment carries a `path:line` anchor.
-
-Ground each comment in something you actually read. If a claim rests on
-inference rather than a file you opened, it is a question:, not an issue:.
-
-Write the review to `review-result.md` as: Summary (no opinions), Context (the
-anchors from step 2), Blocking (most severe first), Non-blocking (grouped by
-label), Open questions. If nothing blocking survived verification, say so
-plainly at the top rather than promoting a nitpick to fill the space.
-```
-
-### 4. Before refactoring
-
-Refactors fail on the sites nobody found. Counting first is what stops the
-budget being spent reading site 4 of 60, and `ast-grep` is non-negotiable here —
-a regex misses calls split across lines and matches them inside comments.
-
-```text
-Use context-builder before any edit.
-
-Refactor: <from X to Y — rename, extract, change a signature, replace a pattern>
-Scope: <whole repo / this package / these paths>
-
-Count before you read:
-- `rg -lw '<symbol>' | wc -l` for the blast radius as a number
-- `rg -cw '<symbol>'` for where it concentrates
-- `ast-grep` for the structural sites — not regex, so multi-line calls aren't
-  missed and matches inside comments and strings aren't counted
-
-If the blast radius is over ~15 files, stop and give me the number instead of
-reading them all — that count is itself the finding. Budget: Deep.
-
-Give me back:
-- the blast radius count and the per-file concentration
-- every site grouped by the kind of change it needs — mechanical / needs
-  thought / ambiguous — each as a `path:line` anchor
-- the interface or contract that pins the current shape, quoted exactly
-- what test coverage already exists over the affected sites
-- Open questions for any site you cannot classify
-
-Then propose an edit order, safest first. Don't start editing.
-
-Write it to `refactor-result.md`: the blast radius count, the three site groups
-as a checklist I can tick through, and the edit order. Keep that file updated as
-edits land, so it doubles as the progress tracker.
-```
-
-### 5. For documentation
-
-The only one that starts top-down rather than anchor-out, because there is no
-anchor. The `[inferred]` labels matter more here than anywhere else — an inferred
-claim that ships in a doc becomes something the next person trusts.
-
-```text
-Use context-builder with top-down seeding — I have no anchor.
-
-Document: <what — a module, a service, the public API, onboarding for <area>>
-Audience: <new teammate / API consumer / future me>
-Length target: <e.g. one page>
-
-Orient first with the unfamiliar-repo sequence — tree, the directory histogram,
-the manifest through jq/yq, recently-changed files — then anchor out from the
-entry point. Budget: Deep, but stop early if the map converges sooner.
-
-Read interfaces, types, and configs. Skip tests and implementation bodies unless
-a behavior is documented nowhere else.
-
-Give me back:
-- a Map: `path` plus one line each, for every component that earns a mention
-- the public surface: exact signatures pulled with ast-grep, not paraphrased
-- configuration: the precedence order (default -> file -> env -> flag), which
-  matters more than any individual value
-- every claim labelled [verified] or [inferred] — I won't ship an [inferred]
-  claim without checking it myself
-- Open questions: what the code does not explain about itself
-
-Then draft the doc, with every factual claim traceable to an anchor above.
-
-Write two files, because they have different lifespans:
-- `<topic>.md` — the doc itself, clean prose, no labels, ready to ship
-- `doc-result.md` — the evidence behind it: the map, the anchors, and every
-  [inferred] claim I still need to verify. I delete this once the doc is checked.
-```
-
-### 6. For improvement research
-
-The other five start from something given — a symptom, a goal, a diff, a rename,
-a topic. This one starts from an empty hand, which is why it is the easiest to
-answer with advice that was true before the repo was opened. The counting rule
-is what stops that: a candidate with no number and no anchor doesn't get a row.
-
-```text
-Use context-builder in survey mode. Don't edit anything this turn.
-
-Area: <repo, package, or paths — narrow it; "the whole codebase" is not a scope>
-Looking for: <duplication / dead code / test gaps / performance / error handling
-  / API surface / correctness risk / all>
-Already known bad: <so you don't spend the budget re-finding it>
-
-Rank before you read. The sweep is cheap, so it goes wide; the reads are
-expensive, so only the top handful of candidates earn one.
-
-Ground every candidate in one of three countable signals, not in best practice:
-
-- Self-disagreement — the repo does the same thing two ways. Count both
-  (rg -c, or ast-grep once the pattern is code-shaped); the minority form is the
-  candidate and the majority form is the target. "37 files do X, 3 do Y" is a
-  finding. "Y is bad practice" is not.
-- Churn — git --no-pager log --format= --name-only -n 200 | sort | uniq -c |
-  sort -rn | head -20. Improvement pays off where the code keeps being touched.
-- Repetition — the same shape in N places, found structurally with ast-grep.
-  N is the finding.
-
-Budget: Deep, breadth-first. Stop when a round surfaces no new candidate — not
-when you run out of searches you could still run.
-
-Give me back a table, best payoff first, every row carrying: the candidate in
-one line; evidence as a count *and* a path:line anchor (no count, no row);
-effort as a blast-radius number; what it costs to leave alone — "nothing, it's
-just untidy" is a legitimate answer and I'd rather read it than a manufactured
-risk; and [verified] or [inferred].
-
-Then below the table: Not worth it — what you found and are deliberately not
-proposing, one line each, so the next pass doesn't re-find them. And Open
-questions — anything that depends on intent rather than evidence.
-
-An [inferred] candidate ranks below every [verified] one, whatever its payoff.
-If a finding would read identically against any repo in this language, cut it —
-that's the tell that it came from training rather than this codebase.
-
-No fixes this turn. A ranked list I can choose from beats a patch I must audit.
-
-Write the survey to `improvement-result.md`, with `git rev-parse --short HEAD`
-at the top: rankings go stale as the code moves, and a row whose anchor no
-longer resolves is one to re-verify, not to act on.
-```
+Copy one prompt whole, fill its input section, and remove fields that genuinely
+do not apply. Preserve its mutation policy: design and review stop before source
+changes, while planning/implementation requires an explicit `implement` mode.
+The output file is part of the workflow—it keeps evidence, decisions, and
+validation usable across sessions.
 
 ### Adapting any of them
 

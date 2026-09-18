@@ -307,11 +307,18 @@ Open only the row that matches what you're doing.
 | Interpreting, narrowing, or troubleshooting a reading-list script run | `references/reading-list-scripts.md` |
 | Delta, handoff, review, or working-set packs; the hand-off self-check; producing a pack section with a tool instead of by reading | `references/pack-templates.md` |
 
-`prompts/` holds six ready-to-send prompts that drive this loop — each fixes the
-tier, states what discovery must answer, and names the result file. Offer the
-matching one: `01-before-debugging`, `02-before-planning-implementing`,
-`03-before-reviewing-code`, `04-before-refactoring`, `05-for-documentation`,
+`prompts/` holds six ready-to-send workflow prompts that drive this loop — each
+fixes the tier, states what discovery must answer, and names the result file.
+Offer the matching one: `01-before-debugging`,
+`02-before-planning-implementing`, `03-before-reviewing-code`,
+`04-before-refactoring`, `05-for-documentation`, or
 `06-for-improvement-research`.
+
+For a Kotlin Spring Boot backend task, prefer the self-contained prompt in
+`prompts/kotlin-backend-spring-boot/`: `01-design.md` for design only,
+`02-plan-implement.md` for planning or authorized implementation, and
+`03-code-review.md` for review only. Each combines Kotlin language, backend
+system, and Spring Boot framework concerns; do not append a separate profile.
 
 Never read a pager-backed command's output into context. Use ranged reads for files,
 and disable paging explicitly (`git --no-pager diff`) or it blocks forever.
