@@ -39,6 +39,8 @@ only a context pack.
 - Search to narrow the candidates, then read enough to answer the live question.
   Do not repeat searches just to complete a checklist.
 - Keep enough context and time for implementation and validation after discovery.
+- Disable paging for any command that may invoke a pager (`git --no-pager diff`,
+  `GIT_PAGER=cat`); an interactive pager blocks the command indefinitely.
 - Per-command guidance: `references/discovery-recipes.md`.
 
 ## Phase 1 — Frame
@@ -79,7 +81,7 @@ Needs more than Deep? The task is too big. Split it, one pack per piece.
 | Does a value *reach* a sink (flow, not shape)? | `semgrep` taint mode |
 | Something emitted JSON | `jq` |
 | Something is YAML (config, CI, compose) | `yq` |
-| I have <10 candidate files and need to understand them | a file-reading tool or ranged shell read |
+| I have ≤10 candidate files and need to understand them | a file-reading tool or ranged shell read |
 | I have >10, and the reading *is* the work | a subagent, briefed (below) |
 
 Use `rg` for text and `ast-grep` for structure. Switch to `ast-grep` the moment a
@@ -87,7 +89,8 @@ regex would need to care about whitespace, line breaks, nesting, or balanced
 parens.
 
 Escalate to Semgrep for dataflow — it's the only tool here that answers whether a
-value *reaches* something. It isn't one of the six: check `command -v semgrep`
+value *reaches* something. It isn't one of the six core tools (`tree`, `rg`,
+`fd`, `ast-grep`, `jq`, `yq`): check `command -v semgrep`
 only when a flow question arises, and log the question as open if it's absent.
 
 Check availability only for tools the next step needs, and reuse that result.
@@ -112,7 +115,7 @@ these are choices, not mandatory stages.
 5. **Ranged reads** — the 40 lines around the hit, not the 900-line file.
 6. **Full reads** — only files that are both small and central: interfaces,
    configs, schemas, the one class the task is about.
-7. **Delegated reads** — when rungs 5–6 would pull more than ~10 files into
+7. **Delegated reads** — when rungs 5–6 would pull more than 10 files into
    *this* window, send the reading to a subagent instead. Its reads cost its
    context, not yours; what comes back is a page of anchors.
 
@@ -155,7 +158,7 @@ columns when you report a run — they're what makes stopping early safe.
 Matching is fuzzy against the repo's own vocabulary, so a guessed or misspelled
 name still lands. Use it instead of spending a round on synonyms.
 
-On `tree_sitter is required by this script`, run `scripts/bootstrap.sh` and
+On `tree_sitter is required by this script`, run `"$SKILL_DIR/scripts/bootstrap.sh"` and
 retry if setup is feasible. If installation is unavailable, use scoped text
 searches and reads, and label unverified structural relationships. For other
 languages, use the ladder.
@@ -252,7 +255,8 @@ Write a briefing, not an archive.
 - **Anchor, don't excerpt.** `auth/Filter.kt:88 — validates JWT, throws on
   expiry` beats pasting the method. Paste code only where the agent must
   reproduce exact syntax: signatures, schemas, config keys, error strings. Write
-  anchors as `path/to/file.ts:42` — they're clickable.
+  anchors as `path/to/file.ts:42`, or in the host's clickable link format when
+  it has one (e.g. `[file.ts:42](path/to/file.ts#L42)`).
 - **Label confidence.** Mark every claim `verified` (you read it), `inferred`
   (deduced from naming or structure), or `assumed`. Unlabelled inference is how
   hallucination gets downstream.
@@ -319,6 +323,3 @@ For a Kotlin Spring Boot backend task, prefer the self-contained prompt in
 `02-plan-implement.md` for planning or authorized implementation, and
 `03-code-review.md` for review only. Each combines Kotlin language, backend
 system, and Spring Boot framework concerns; do not append a separate profile.
-
-Never read a pager-backed command's output into context. Use ranged reads for files,
-and disable paging explicitly (`git --no-pager diff`) or it blocks forever.
