@@ -30,12 +30,10 @@ of a short command does not require creating a file.
 - Use an existing project tooling directory for reusable searches, or `.scripts/`
   when the project has no convention. Keep one-off investigation helpers in a
   temporary directory; creating tooling should save more work than it adds.
-- **Don't re-create what ships with this skill.**
-  `$SKILL_DIR/scripts/search-java-sources.py` (resolve `SKILL_DIR` as described
-  in `SKILL.md`) and its Kotlin, Python
-  and TS twins already cover "which files should I read for X" in Java, Kotlin,
-  Python and TS/JS repos — call them, don't write a smaller version into
-  `.scripts/`.
+- **Don't build a ranker.** "Which files should I read for X" is a few `rg -c`,
+  definition, and import-edge searches (`discovery-recipes.md` Recipe 8), and
+  their output is evidence you can cite. A scoring script hides why a file
+  ranked where it did.
 - **Check `.scripts/` before writing a new one.** The script you need may already
   be there; extend it rather than adding a near-duplicate. `ls .scripts/` is the
   fastest check — and note that `rg --files` and `fd` do **not** list `.scripts/`

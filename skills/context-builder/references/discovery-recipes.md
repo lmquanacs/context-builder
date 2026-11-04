@@ -12,6 +12,8 @@ you're trying to close, not the whole file.
 - Recipe 5: What is the convention here?
 - Recipe 6: What breaks if I change this?
 - Recipe 7: Unfamiliar repo, no anchor
+- Recipe 8: Several candidates — which one is it?
+- Recipe 9: Is it really unused? (proving a negative)
 - Low-value reads (skip list)
 - Cost reference
 - If a tool is missing
@@ -165,6 +167,65 @@ substance lives versus where the boilerplate lives, and it is the single
 highest-value command here. The manifest read through `jq`/`yq` gives you the
 scripts and dependencies without the 200 lines of lockfile-adjacent noise around
 them. Then switch to anchor-out.
+
+## Recipe 8 — Several candidates — which one is it?
+
+Rank before reading. Each step is cheap and usually removes candidates.
+
+```bash
+# 1. The repo's own spelling for a stem — beats guessing synonyms
+rg -oIi --no-filename '\w*retry\w*' | sort | uniq -c | sort -rn | head -20
+
+# 2. Where the name concentrates
+rg -cw 'RetryPolicy' | sort -t: -k2 -rn | head
+
+# 3. The one definition (pick the shape for the language)
+rg -nw '(class|interface|type|def|fun|function|const|val|object) RetryPolicy'
+ast-grep run -p 'interface RetryPolicy { $$$ }' -l ts
+ast-grep run -p 'class RetryPolicy($$$): $$$' -l python # no bases: 'class RetryPolicy: $$$'
+# Kotlin / Java: a bare `class X $$$` pattern does not parse — match by kind
+ast-grep scan --inline-rules "{id: def, language: kotlin, rule: {kind: class_declaration, has: {regex: '^RetryPolicy$'}}}" .
+
+# 4. One hop of edges from the definer
+rg -l "from ['\"].*config/settings['\"]" -t ts         # TS/JS importers of a module
+rg -l 'import .*\bRetryPolicy\b'                       # JVM / Python importers
+ast-grep run -p '$F($$$, RetryPolicy, $$$)' -l <lang>    # passed as a value, if relevant
+
+# 5. Tie-breakers
+rg -lw 'RetryPolicy' -g '**/*test*' -g '**/*spec*'      # tests that pin behaviour
+git log --oneline -5 -- <candidate>                      # active vs frozen
+```
+
+Keep a one-line verdict per candidate — `kept: defines it` / `dropped: same name,
+no import edge (homonym)`. Read the survivors' relevant ranges in order: the
+definer, then the direct caller on the task's path, then configuration. Stop as
+soon as the live question is answered.
+
+Homonyms are the usual trap: two `Config` types in different modules, or a
+local variable that shares a field's name (`attempt` vs `policy.attempts`).
+`-w` plus a definition check separates them; reading both does not.
+
+## Recipe 9 — Is it really unused? (proving a negative)
+
+A negative claim is the easiest to get wrong and the hardest for a reader to
+check, so make it reproducible.
+
+```bash
+rg -lw 'Symbol'                       # direct references
+rg -l 'Symbol' -uu                    # include ignored and hidden files
+rg -l "['\"]Symbol['\"]"             # string lookups: reflection, DI names, routes
+fd -H -g '{*generated*,*.proto}'      # generators that may emit it
+```
+
+Report the result with its evidence, scope, and blind spots:
+
+> [verified] No references outside `config/` and `http/` —
+> `rg -lw RetryPolicy` over `src/` returns 2 files; string lookups: 0.
+> Not covered: other repositories, runtime-built names.
+
+If a blind spot matters to the task (a public API consumed elsewhere, a name
+resolved by a framework), say so as an open question rather than rounding the
+claim up to "unused".
 
 ---
 

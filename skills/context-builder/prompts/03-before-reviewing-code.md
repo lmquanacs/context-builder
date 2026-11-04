@@ -61,8 +61,8 @@ Choose Micro for a small, explicit change; Standard for a typical review. Split 
 review that cannot fit within Deep into bounded areas and disclose any unreviewed
 area. Discovery budgets limit investigation, not completion. Read the minimum
 surrounding code needed to verify each hypothesis and follow references one hop
-at a time. Use reading-list scripts only when ranking candidates or relationships
-will save broad reading.
+at a time. When several files match, separate them by definition and import or
+call edges before reading them all.
 
 ## Ranked review checklist
 

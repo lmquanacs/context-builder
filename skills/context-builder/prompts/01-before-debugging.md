@@ -53,8 +53,8 @@ expose secrets or personal data in the report.
    can change the path.
 6. Compare with a working path or the last known good revision when one exists.
 7. Inspect focused tests and fixtures that define expected behaviour.
-8. Use a bundled reading-list script when ambiguous candidates or cross-file
-   relationships justify ranking Java, Kotlin, Python, or TypeScript sources.
+8. When several files match, separate them by definition, import or call edges,
+   and focused tests before reading them all; record why each was kept or dropped.
 
 Read the minimum surrounding code required to answer the live questions. Follow
 references one hop at a time and widen only when evidence requires it. If the

@@ -48,8 +48,8 @@ symbol, endpoint, workflow, or file.
    and safe examples when configuration is in scope.
 8. Inspect tests or implementation bodies only when public contracts do not
    explain a behaviour the reader needs.
-9. Use a bundled reading-list script when Java, Kotlin, Python, or TypeScript
-   relationships need ranking.
+9. Verify each documented behaviour against the code that implements it, not
+   only its name or comment.
 10. Record missing intent or operational knowledge under Open questions.
 
 Choose Standard for a bounded guide or reference and Deep for service-level or

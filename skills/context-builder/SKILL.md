@@ -1,6 +1,6 @@
 ---
 name: context-builder
-description: Discover, verify, and shape the minimum context needed before acting on a task. Use whenever you must understand code, repos, docs, or files you haven't read — "where is X defined", "how does Y work", starting work in an unfamiliar area or codebase, bug hunts, tracing call sites and data flow, cross-file refactors, auditing a pattern, deciding what to read first, code review, or briefing a subagent or another agent. Covers search-tool craft (rg, fd, ast-grep, jq, yq, tree, plus Semgrep taint mode) and ships reading-list scripts that rank files by keyword for Java, Kotlin, Python, and TypeScript/JavaScript repos. Also use when the user mentions context engineering, context window, token budget, prompt caching, cost per task, running low on context, taint or dataflow tracking, or asks why an agent's answer was wrong or expensive. Prefer it over ad-hoc file reading any time a task touches more than two files — opening files to "get oriented" is what it replaces.
+description: Discover, verify, and shape the minimum context needed before acting on a task. Use whenever you must understand code, repos, docs, or files you haven't read — "where is X defined", "how does Y work", starting work in an unfamiliar area or codebase, bug hunts, tracing call sites and data flow, cross-file refactors, auditing a pattern, deciding what to read first, code review, or briefing a subagent or another agent. Covers search-tool craft (rg, fd, ast-grep, jq, yq, tree, plus Semgrep taint mode), and how to separate ambiguous candidates and label every finding verified, inferred, or assumed so the next action rests on checked evidence. Also use when the user mentions context engineering, context window, token budget, prompt caching, cost per task, running low on context, taint or dataflow tracking, or asks why an agent's answer was wrong or expensive. Prefer it over ad-hoc file reading any time a task touches more than two files — opening files to "get oriented" is what it replaces.
 ---
 
 # Context Builder
@@ -30,7 +30,7 @@ only a context pack.
 - **Exact symbol, error, or endpoint:** start with a scoped literal search. Read
   the useful hit directly; do not run a directory tour first.
 - **Ambiguous name or cross-file relationships:** use the discovery loop below.
-  The reading-list scripts help when ranking candidates will save reading.
+  Separate the candidates with cheap evidence before reading them all.
 
 ## Budget rules
 
@@ -137,34 +137,28 @@ Follow references one hop at a time. From an anchor, take the interface it
 implements, its direct caller, and its configuration as needed. Read focused
 tests when they establish the behaviour or regression that the task concerns.
 
-### Java, Kotlin, Python, TS/JS: ranked discovery when needed
+### Several candidates: separate them with evidence
 
-When a scoped search leaves ambiguous candidates or you need relationships, use: `search-java-sources.py` (`.java`),
-`search-kotlin-sources.py` (`.kt`/`.kts`), `search-python-sources.py`
-(`.py`/`.pyi`), `search-ts-sources.py` (`.ts`/`.tsx`/`.js`/`.jsx`). Not on
-`PATH` — invoke by path:
+When a scoped search leaves more than one plausible file, rank them with cheap
+signals before opening any, then read top-down and stop once the question is
+answered. Works in any language with only `rg`, `fd`, and `ast-grep`:
 
-```bash
-# Set SKILL_DIR to the absolute directory containing this loaded SKILL.md.
-"$SKILL_DIR/scripts/bootstrap.sh"                          # only if parser dependencies are missing
-"$SKILL_DIR/scripts/search-ts-sources.py" <keyword>... [root]   # or -python-, -java-, -kotlin-
-```
+1. **Spelling** — unsure what the repo calls it? List its own identifiers for
+   the stem instead of guessing synonyms:
+   `rg -oIi --no-filename '\w*retry\w*' | sort | uniq -c | sort -rn | head`.
+2. **Concentration** — `rg -cw 'Term'` shows where the name clusters; the
+   definer and its heaviest user usually top the counts.
+3. **Definition** — find the one declaration with `ast-grep` (or
+   `rg -nw '(class|interface|type|def|fun|function|const|object) Term'`). It is the
+   anchor every other candidate is measured against.
+4. **Edges, one hop** — who imports or calls the definer, and what it depends
+   on. A file that names the term but has no edge to the definer is usually a
+   homonym.
+5. **Tie-breakers** — reachability from the task's entry point, configuration
+   wiring, a focused test, recent churn (`git log --oneline -5 -- path`).
 
-You get a reading list tiered **READ FIRST / THEN / SKIM IF NEEDED**, each row
-carrying its matched line, mention count, and the relation that pulled it in.
-Read top-down, stop when the question is answered. Keep the tiers and evidence
-columns when you report a run — they're what makes stopping early safe.
-
-Matching is fuzzy against the repo's own vocabulary, so a guessed or misspelled
-name still lands. Use it instead of spending a round on synonyms.
-
-On `tree_sitter is required by this script`, run `"$SKILL_DIR/scripts/bootstrap.sh"` and
-retry if setup is feasible. If installation is unavailable, use scoped text
-searches and reads, and label unverified structural relationships. For other
-languages, use the ladder.
-
-Output format, evidence columns, `--all` / `--from-file` / `--depth` and the rest
-of the flags, troubleshooting: `references/reading-list-scripts.md`.
+Record why each candidate was kept or dropped; that note is what makes stopping
+early safe. Commands per language: `references/discovery-recipes.md` Recipe 8.
 
 ## Phase 3 — Reflect
 
@@ -193,8 +187,8 @@ A round is one hypothesis, however many commands it takes.
 1. The user's exact vocabulary — `rg -lw 'theirTerm'`.
 2. Loosened — drop `-w`, add `-i`, add `-u` (the file may be `.gitignore`d),
    widen the glob.
-3. Structural or synonymous — `ast-grep` for the shape, or the two or three names
-   the codebase would plausibly use instead.
+3. Structural or synonymous — `ast-grep` for the shape, or the names the
+   codebase actually uses for the stem (spelling move in Phase 2), not guesses.
 
 No candidate file set after round 3? **Stop.** Don't start a fourth round with a
 fourth synonym. Take one of two exits:
@@ -234,6 +228,27 @@ Context pressure changes what to do next, not just how much of it to do.
 - **Never spend the last of the window on discovery.** Leave enough room to act,
   or you finish with perfect context and no budget to use it.
 
+### Confidence before you act
+
+A finding is load-bearing when the next action depends on it. Before acting on
+one, hold it to these rules:
+
+- **A search hit proves text exists, not behaviour.** Label a claim `verified`
+  only after reading enough of the range to know what the line does.
+- **"This is the path that runs" needs two signals** — the code plus evidence
+  it is reached: a caller on the task's path, the config that wires it, or a
+  test that exercises it. Code alone, however carefully read, is `inferred`.
+- **A negative claim carries its search.** "No other callers" is only as strong
+  as the command behind it: state the command, the scope, and its blind spots
+  (reflection, DI wiring, string-built names, generated code, other repos).
+- **Separate direct from indirect dependence.** A file that names a symbol
+  breaks on a rename; one that reaches it through a wrapper or default only
+  changes behaviour. Say which each dependent is.
+- **Anchors expire on edit.** Re-check any anchor in a file you have changed.
+
+Still `inferred` or `assumed` and load-bearing? Close it with one targeted
+search or read, or carry it into the answer as a stated risk — never as fact.
+
 ### Ask a question that carries the search
 
 Never ask a bare "can you clarify?" — it throws away what you learned and makes
@@ -258,8 +273,8 @@ Write a briefing, not an archive.
   anchors as `path/to/file.ts:42`, or in the host's clickable link format when
   it has one (e.g. `[file.ts:42](path/to/file.ts#L42)`).
 - **Label confidence.** Mark every claim `verified` (you read it), `inferred`
-  (deduced from naming or structure), or `assumed`. Unlabelled inference is how
-  hallucination gets downstream.
+  (deduced from naming or structure — say from what), or `assumed`. Unlabelled
+  inference is how hallucination gets downstream.
 - **Position deliberately.** Attention is strongest at start and end. Task and
   constraints first, bulk in the middle, next action last.
 - **Order for cache reuse.** For a pack reused across turns, put stable material
@@ -297,6 +312,8 @@ need no pack. Templates and handoff self-check: `references/pack-templates.md`.
 | Investigating an adjacent problem you spotted | One line at the end, after the answer |
 | Regexing toward a dataflow answer | A Semgrep taint rule, or log it open |
 | Silently guessing a gap | Log it under Open questions |
+| Labelling a search hit `verified` | Read the range first, or label it `inferred` |
+| "Nothing else uses it" with no search shown | State the command, scope, and blind spots |
 | One pack for a sprawling task | Split the task, one pack each |
 | Re-reading a file already in context | Cite what you already have |
 
@@ -307,8 +324,7 @@ Open only the row that matches what you're doing.
 | Scenario | Open |
 |---|---|
 | Empty search; a long pipeline to retype; per-language `ast-grep` patterns; a Semgrep taint rule; a missing tool's fallback | `references/tool-cookbook.md` |
-| Tracing a value backward or forward; finding config, an error's origin, a convention, or a change's blast radius; unfamiliar repo with no anchor; per-command costs | `references/discovery-recipes.md` |
-| Interpreting, narrowing, or troubleshooting a reading-list script run | `references/reading-list-scripts.md` |
+| Tracing a value backward or forward; finding config, an error's origin, a convention, or a change's blast radius; separating several candidates; unfamiliar repo with no anchor; per-command costs | `references/discovery-recipes.md` |
 | Delta, handoff, review, or working-set packs; the hand-off self-check; producing a pack section with a tool instead of by reading | `references/pack-templates.md` |
 
 `prompts/` holds six ready-to-send workflow prompts that drive this loop — each

@@ -43,77 +43,44 @@ missing=$(rg -o '(references|scripts|prompts)/[A-Za-z0-9._-]+' SKILL.md | sort -
 
 # --- wiring, the other direction: a shipped file nothing points at is dead weight.
 # Reachable means some other shipped text names it: SKILL.md for anything the
-# agent is meant to use, or bootstrap/evals for the meta-tooling around it.
+# agent is meant to use, or evals for the meta-tooling around it.
 orphans=$(fd -t f . references scripts prompts 2>/dev/null \
   | while read -r p; do
       stem=$(basename "$p"); stem=${stem%.*}
       # every other shipped text, so a file mentioning itself doesn't count
       index=()
-      for source in SKILL.md scripts/*.sh scripts/*.py references/*.md prompts/*.md evals/README.md; do
+      for source in SKILL.md scripts/*.sh references/*.md prompts/*.md evals/README.md; do
         [[ "$source" == "$p" ]] || index+=("$source")
       done
       grep -qF "$stem" "${index[@]}" || echo "$p"
     done)
 [[ -z "$orphans" ]]; check "no unreachable resources" $? "${orphans:-all reachable}"
 
-# --- executability: the documented invocation has to work from a cold start
-bad_shebang=$(head -1 scripts/search-*.py | rg -v '^(==>|$)' | rg -v 'python3$' || true)
-[[ -z "$bad_shebang" ]]; check "scripts shebang python3" $? "${bad_shebang:-all python3}"
-
-nonexec=$(for p in scripts/*.sh scripts/search-*-sources.py; do [[ -x "$p" ]] || echo "$p"; done)
+# --- executability: shipped scripts run from a cold start
+nonexec=$(for p in scripts/*.sh; do [[ -x "$p" ]] || echo "$p"; done)
 [[ -z "$nonexec" ]]; check "scripts executable" $? "${nonexec:-all +x}"
 
-if [[ -x scripts/.venv/bin/python3 ]] \
-   && scripts/.venv/bin/python3 -c 'import tree_sitter, tree_sitter_java, tree_sitter_kotlin, tree_sitter_typescript, tree_sitter_python' 2>/dev/null; then
-  check "parser deps installed" 0 "scripts/.venv"
-else
-  check "parser deps installed" 1 "run scripts/bootstrap.sh"
-fi
+# --- fixtures: the evals grade against planted anchors, so a fixture edit that
+# moves one silently turns a passing case into a misleading one.
+fixture_check() { # fixture_check <label> <pattern> <file>
+  rg -qw "$2" "evals/fixtures/$3"; check "$1" $? "$2 in $3"
+}
+fixture_check "fixture: shop policy"      'interface RetryPolicy'  shop/src/config/settings.ts
+fixture_check "fixture: shop nested retry" 'fetchWithRetry'        shop/src/billing/charge.ts
+fixture_check "fixture: shop homonym"      'attempt < 3'           shop/src/billing/charge.ts
+fixture_check "fixture: inventory policy"  'class RetryPolicy'     inventory/src/inventory/config/settings.py
+fixture_check "fixture: warehouse flag"    'decrementOnReserve'    warehouse/src/config/limits.ts
+fixture_check "fixture: warehouse 2nd hit" 'adjustStock'           warehouse/src/events/handlers.ts
 
-# --- the end-to-end claim: a fuzzy keyword lands on the right file.
-# One fixture per grammar family, because a broken query fails silently — it
-# matches nothing rather than erroring, and the list still prints.
-if out=$(./scripts/search-ts-sources.py retrypolicy evals/fixtures/shop 2>&1); then
-  grep -q 'READ FIRST' <<<"$out" && grep -q 'settings.ts' <<<"$out"
-  check "reading list smoke test (ts)" $? "fuzzy 'retrypolicy' -> settings.ts"
+# --- the recipes the skill documents must actually run on this machine's tools.
+if out=$(ast-grep run -p 'interface RetryPolicy { $$$ }' -l ts evals/fixtures/shop 2>&1) \
+   && grep -q 'settings.ts' <<<"$out"; then
+  check "recipe 8: ts definition" 0 "ast-grep finds RetryPolicy"
 else
-  check "reading list smoke test (ts)" 1 "script exited non-zero"
+  check "recipe 8: ts definition" 1 "ast-grep pattern no longer matches"
 fi
-
-if out=$(./scripts/search-python-sources.py retrypolicy evals/fixtures/inventory 2>&1); then
-  grep -q 'READ FIRST' <<<"$out" && grep -q 'settings.py' <<<"$out"
-  check "reading list smoke test (py)" $? "fuzzy 'retrypolicy' -> settings.py"
-else
-  check "reading list smoke test (py)" 1 "script exited non-zero"
-fi
-
-# The Python edges a regex could not produce: a subclass across a relative
-# import, and a decorator reference. Guards the query, not just the ranking.
-if out=$(./scripts/search-python-sources.py BaseProcessor evals/fixtures/inventory 2>&1); then
-  grep -q 'subclasses BaseProcessor' <<<"$out" && grep -q 'decorated by audited' <<<"$out"
-  check "python structural edges" $? "subclasses + decorated by"
-else
-  check "python structural edges" 1 "script exited non-zero"
-fi
-
-# The delegation fixture earns its place only if narrowing still leaves the
-# three load-bearing files findable among 27 plausible distractors.
-if out=$(./scripts/search-ts-sources.py reservationpolicy evals/fixtures/warehouse 2>&1); then
-  grep -q 'searched 30 sources' <<<"$out" \
-    && grep -q 'config/limits.ts' <<<"$out" \
-    && grep -q 'inventory/reserve.ts' <<<"$out" \
-    && grep -q 'events/handlers.ts' <<<"$out"
-  check "delegation fixture (ts)" $? "30 sources -> the 3 that matter"
-else
-  check "delegation fixture (ts)" 1 "script exited non-zero"
-fi
-
-# Assert structured results and cache behaviour for every supported grammar.
-if out=$(PYTHONDONTWRITEBYTECODE=1 scripts/.venv/bin/python3 -B -m unittest discover -s evals -p 'test_*.py' 2>&1); then
-  check "search regressions (4 languages)" 0 "coverage, cache, filtering, empty output, disabled work"
-else
-  check "search regressions (4 languages)" 1 "$out"
-fi
+direct=$(rg -lw 'RetryPolicy' evals/fixtures/shop | wc -l | tr -d ' ')
+[[ "$direct" -eq 2 ]]; check "recipe 9: direct references" $? "$direct files name RetryPolicy (expect 2)"
 
 # --- eval wiring: a case directory with no grader scores nothing, silently.
 ungraded=$(fd -t d -d 1 '^[0-9]' evals 2>/dev/null \

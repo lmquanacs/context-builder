@@ -2,22 +2,10 @@
 
 Scoring this skill has two halves. The mechanical half — description length,
 SKILL.md token weight, whether every shipped file is reachable, whether the
-documented commands run — is `../scripts/score-skill.sh`, which exits
+planted fixture anchors and documented recipe commands still hold — is `../scripts/score-skill.sh`, which exits
 non-zero if any check fails, so it can gate a commit. This
 directory is the other half: does the skill actually change what the agent does,
 and for the better.
-
-## Script regressions
-
-`test_search_scripts.py` runs automatically through `score-skill.sh`. Run it alone:
-
-```bash
-scripts/.venv/bin/python3 -B -m unittest discover -s evals -p 'test_*.py'
-```
-
-Temporary fixtures cover all four grammars, root coverage, ranking, final `--all`
-filtering, cache reuse/invalidation, empty results, argument validation, and
-skipping disabled work. These assertions complement the agent behaviour cases.
 
 ## Running
 
@@ -57,7 +45,7 @@ verified while writing this:
 | `02-stays-quiet-when-not-needed` | Over-triggering. A named file and a named edit should not buy a discovery round — a skill that fires here costs more than it saves |
 | `03-pack-fidelity` | Packs without `path:line` anchors or confidence labels, and packs that archive instead of brief |
 | `04-stop-discipline` | The hardest instruction in the skill to make stick: stop after three rounds and ask a question that carries the search, rather than inventing the thing the user named |
-| `05-reading-list-script` | The bundled scripts being documented but not runnable — this case fails if `bootstrap.sh` isn't run when the parsers are missing |
+| `05-confident-dependents` | Overconfidence: a dependency list with no search behind its completeness claim, a homonym (`attempt` vs `attempts`) counted as a reference, or indirect dependents reported as if a rename breaks them |
 | `06-budget-adherence` | The two phases nothing else grades: a budget tier stated but not held, and findings reported with no ledger saying which questions are still open |
 | `07-delegates-the-reading` | Rung 7 going through the motions: a subagent spawned with a topic instead of questions, no bound, and no required Findings format — so what comes back is prose the main agent has to verify, or re-read |
 
@@ -96,9 +84,13 @@ all touch stock, and none of them is on the order path. `shop` and `inventory`
 are small enough that brute force reaches the right answer; this one is not,
 which is what makes case 07's delta legible.
 
-`fixtures/inventory` is the Python counterpart used by case 06 and by
-`score-skill.sh`: nine sources under `src/inventory` with the same planted
-double-retry bug, plus the two edges a regex cannot produce — `ChargeProcessor`
-subclassing `BaseProcessor` across a relative import, and the `@audited`
-decorator. A query that silently stops matching would still print a plausible
-reading list, so those two edges are asserted by name in the mechanical score.
+`fixtures/inventory` is the Python counterpart used by case 06: nine sources
+under `src/inventory` with the same planted double-retry bug, plus
+`ChargeProcessor` subclassing `BaseProcessor` across a relative import and an
+`@audited` decorator, so tracing relationships takes more than one text search.
+
+`shop` also carries case 05's trap: `billing/charge.ts` loops on a local
+`attempt` with a hard-coded `3`, so a loose search for `attempts` lands on a
+file that does not read the policy field at all. `score-skill.sh` asserts each
+fixture's planted anchors, so an edit that moves one fails the mechanical score
+instead of silently invalidating a case.

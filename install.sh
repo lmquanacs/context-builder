@@ -81,8 +81,6 @@ for skill in "${skills[@]}"; do
 
   if [[ "$mode" == "copy" ]]; then
     cp -R "$src" "$dest"
-    # The venv is machine-specific and often large; bootstrap rebuilds it below.
-    rm -rf "$dest/scripts/.venv"
   else
     ln -s "$src" "$dest"
   fi
@@ -106,15 +104,6 @@ for skill in "${skills[@]}"; do
       echo "      you no longer want it."
     fi
   fi
-done
-
-# Step 2 of the install: the reading-list scripts parse with tree-sitter and have
-# no regex fallback, so an install without this is an install that crashes.
-for skill in "${skills[@]}"; do
-  bootstrap="$dest_root/$skill/scripts/bootstrap.sh"
-  [[ -x "$bootstrap" ]] || continue
-  echo "bootstrapping $skill"
-  "$bootstrap" | sed 's/^/  /'
 done
 
 # Verify rather than assume, so a broken install fails here and not mid-task.

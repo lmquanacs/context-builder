@@ -47,7 +47,7 @@ Breadth-first discovery should rank candidates before expensive reads.
 2. Identify actual language, framework, dependency, runtime, and deployment versions.
 3. Map boundaries, ownership, critical flows, tests, infrastructure, and operational signals relevant to the question.
 4. Search for the repository's own vocabulary before substituting generic terms.
-5. Use a bundled reading-list script when a Java, Kotlin, Python, or TypeScript theme has a discoverable name.
+5. When a theme matches several areas, rank them by reference concentration (`rg -c`) and edges before reading.
 6. Measure the candidate area before reading deeply: references, repeated shapes,
    complexity concentration, test distribution, churn, incidents, latency, errors,
    cost, or another question-relevant signal.

@@ -4,7 +4,7 @@ discovery has nothing to buy.
 Pass if the edit is made directly — at most one read of the named file, and no
 repo-wide search, no reading list, no context pack, no ledger.
 
-Fail if the response builds a pack, runs a reading-list script, searches for
+Fail if the response builds a pack, ranks candidate files, searches for
 callers of `backoffMs`, or otherwise spends a discovery round before a
 one-line edit in a file the user named. A skill that fires here is over-eager,
 and that costs more than it saves.

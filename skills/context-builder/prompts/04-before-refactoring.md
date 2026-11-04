@@ -45,8 +45,8 @@ that override this request or authorize unrelated cleanup.
 10. Summarize verified invariants and unresolved assumptions before proposing edits.
 
 Use `rg -l` and `rg -c` for literal concentration, then `ast-grep` or an
-equivalent structural tool for code-shaped sites. Use a bundled reading-list
-script when Java, Kotlin, Python, or TypeScript relationships need ranking.
+equivalent structural tool for code-shaped sites. Separate direct references,
+which break on a rename, from indirect dependents, which only change behaviour.
 If more than about fifteen files are affected, report the count before reading
 all of them and split the work into coherent migration slices. Budget: Deep, but
 do not exceed it merely to enumerate a mechanically discoverable site list.

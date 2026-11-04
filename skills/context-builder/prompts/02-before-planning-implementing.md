@@ -50,8 +50,8 @@ Before proposing a design:
    that constrain the design.
 8. Count the blast radius of changing public symbols, schemas, endpoints, events,
    configuration, and infrastructure.
-9. Use a bundled reading-list script when ranking Java, Kotlin, Python, or
-   TypeScript candidates will save broad reading.
+9. When several files match, separate them by definition, import or call edges,
+   and focused tests before reading them all.
 10. Summarize verified context and unresolved assumptions before selecting a design.
 
 Choose Micro for a local, explicit edit; Standard for a typical feature; Deep
