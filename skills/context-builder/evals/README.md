@@ -48,6 +48,7 @@ verified while writing this:
 | `05-confident-dependents` | Overconfidence: a dependency list with no search behind its completeness claim, a homonym (`attempt` vs `attempts`) counted as a reference, or indirect dependents reported as if a rename breaks them |
 | `06-budget-adherence` | The two phases nothing else grades: a budget tier stated but not held, and findings reported with no ledger saying which questions are still open |
 | `07-delegates-the-reading` | Rung 7 going through the motions: a subagent spawned with a topic instead of questions, no bound, and no required Findings format — so what comes back is prose the main agent has to verify, or re-read |
+| `08-documents-with-diagrams` | Documentation written from SKILL.md's summary without reading `doc-writing.md` and `doc-diagrams.md`: no key terms first, prose with no diagrams, code names in boxes, or a diagram showing one retry layer when the code nests two |
 
 01 and 02 are a pair: a description tuned until 01 passes will eventually break
 02. Read their scores together, never one alone.

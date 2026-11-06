@@ -1,6 +1,6 @@
 ---
 name: context-builder
-description: Discover, verify, and shape the minimum context needed before acting. Use whenever you must understand code, repos, docs, or files you haven't read — "where is X defined", "how does Y work", unfamiliar codebases, bug hunts, tracing call sites and data flow, cross-file refactors, pattern audits, deciding what to read first, code review, docs with flow diagrams, or briefing a subagent. Covers rg, fd, ast-grep, jq, yq, tree, and Semgrep taint mode; separating ambiguous candidates; and labelling findings verified, inferred, or assumed. Also use for context engineering, context window or token budget, prompt caching, cost per task, running low on context, or why an agent's answer was wrong or expensive. Prefer it over ad-hoc file reading whenever a task touches more than two files.
+description: Discover, verify, and shape the minimum context needed before acting. Use whenever you must understand code, repos, docs, or files you haven't read — "where is X defined", "how does Y work", unfamiliar codebases, bug hunts, tracing call sites and data flow, cross-file refactors, pattern audits, deciding what to read first, code review, writing or updating documentation (always with diagrams), or briefing a subagent. Covers rg, fd, ast-grep, jq, yq, tree, and Semgrep taint mode; separating ambiguous candidates; and labelling findings verified, inferred, or assumed. Also use for context engineering, context window or token budget, prompt caching, cost per task, running low on context, or why an agent's answer was wrong or expensive. Prefer it over ad-hoc file reading whenever a task touches more than two files.
 ---
 
 # Context Builder
@@ -22,6 +22,8 @@ after shaping, continue the authorized work unless only a pack was requested.
 - **Exact symbol, error, or endpoint:** scoped literal search, read the hit. No
   directory tour.
 - **Ambiguous name or cross-file relationships:** run the loop below.
+- **Writing or updating documentation:** always the Phase 4 "Documentation
+  tasks" workflow. Read its two references in full before writing.
 
 ## Budget rules
 
@@ -186,15 +188,29 @@ A briefing, not an archive.
 Next action. Micro: Objective, Findings, Next action. Routine edits: none.
 Templates: `references/pack-templates.md`.
 
-### Diagrams for basic-user docs
+### Documentation tasks
 
-Draw one for branching steps, handoffs, or status lifecycles; ≤5 linear steps
-stay a list. Every box and arrow traces to a `verified` finding (inferred ones
-are dropped or dashed and logged). Use plain reader labels ("You sign in"), not
-code names; about nine boxes max. Flowchart for decisions, sequence for who
-talks to whom, state for status. Use Mermaid if the target renders it, plain
-text otherwise, plus a caption and numbered walkthrough. Check it renders, or
-say it wasn't. Templates: `references/doc-diagrams.md`.
+**Required:** read `references/doc-writing.md` and `references/doc-diagrams.md`
+in full before writing, and follow them; the steps below are only a summary.
+Before handing over, run the doc-writing checklist and report any item that
+isn't met.
+
+1. **Extract key terms first.** Before researching, pull concrete names from the
+   context: for a code change, the main changed class (top of the diff's
+   hunk-context ranking, declared there, an entry point or hub); for a request
+   or ticket, its identifiers, endpoints, and error strings. State one main term
+   plus 2–4 supporting ones, then anchor-out from the main term.
+2. **Research by key term.** Purpose, public surface, callers, dependencies,
+   main flow and branches, states, config, and (for a change) before vs. after.
+3. **Write detailed and structured:** summary, at a glance, big picture, how it
+   works, key parts, states and data, config, what changed, usage, errors,
+   glossary, related. Drop only sections without evidence; never pad.
+4. **Visualise; diagrams carry the document.** Pick any fitting kind (context,
+   flowchart, sequence, state, before/after, timeline, mind map, data
+   relationships). At least one overview and one per main flow. Each passes
+   the five-second rule: the caption states the takeaway, 5–9 boxes, plain
+   labels ("You sign in"), numbered steps, then a walkthrough. Every box and
+   arrow traces to a `verified` finding. Check that it renders.
 
 ## Anti-patterns
 
@@ -221,7 +237,8 @@ say it wasn't. Templates: `references/doc-diagrams.md`.
 | Empty search, saved pipelines, `ast-grep` patterns, taint rules, fallbacks | `references/tool-cookbook.md` |
 | Tracing values, config, error origins, blast radius, candidates, no anchor, costs | `references/discovery-recipes.md` |
 | Delta, handoff, review, working-set packs; hand-off self-check | `references/pack-templates.md` |
-| Flowchart, sequence, state diagrams; plain labels; render checks | `references/doc-diagrams.md` |
+| Documentation: key-term extraction from a diff or request, doc skeleton, checklist | `references/doc-writing.md` |
+| Context, flowchart, sequence, state, before/after diagrams; plain labels; render checks | `references/doc-diagrams.md` |
 
 Workflow prompts in `prompts/`: `01-before-debugging`,
 `02-before-planning-implementing`, `03-before-reviewing-code`,

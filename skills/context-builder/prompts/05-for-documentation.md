@@ -15,6 +15,7 @@ exhaustive tour of the codebase.
 
 - Repository: <local path or repository URL>
 - Topic: <module, service, API, workflow, deployment, or onboarding area>
+- Change or anchor: <branch, PR, commit range, uncommitted diff, main class, file, or none>
 - Document type: <README, guide, reference, runbook, ADR, tutorial, or overview>
 - Audience: <new teammate, maintainer, API consumer, operator, or decision maker>
 - Reader goal: <what the reader must understand or accomplish>
@@ -33,9 +34,25 @@ or unsafe operational values into the document.
 
 ## Establish documentation context
 
-Use top-down seeding when no entry point is known; otherwise start from the named
-symbol, endpoint, workflow, or file.
+Before anything else, read `references/doc-writing.md` and
+`references/doc-diagrams.md` from the context-builder skill in full, and follow
+them for the rest of this task.
 
+Start by extracting key terms, as in `references/doc-writing.md` section 1:
+
+- From a change: rank the classes and functions enclosing each change, and
+  pick the main class (most changed, declared in the change, an entry point
+  or hub).
+- From the topic, ticket, or error: take its identifiers, endpoints, and error
+  strings, mapped to the repository's own spelling.
+
+State one main term and 2–4 supporting terms before researching, then
+anchor-out from the main term. Use top-down seeding only when no key term can
+be extracted.
+
+0. Turn each key term into context questions: purpose, public surface,
+   callers, dependencies, main flow and branches, states, configuration, and
+   (for a change) behaviour before and after.
 1. Read applicable repository instructions, writing conventions, and existing documentation hierarchy.
 2. Identify relevant language, framework, dependency, runtime, and deployment versions.
 3. Map only the components needed for the reader's goal.
@@ -80,9 +97,14 @@ Apply the items relevant to the selected document type:
 13. Distinguish guarantees from implementation details that may change.
 14. Remove redundant detail that does not help the reader accomplish the stated goal.
 15. Verify commands, links, anchors, diagrams, and examples when feasible.
-16. For non-technical readers, show branching flows, handoffs, and status
-    lifecycles as a small diagram in plain-language labels, with a caption
-    and a numbered walkthrough underneath.
+16. Meet the visual minimum: one overview diagram (context or mind map) and
+    one diagram per main flow, in plain-language labels, each with a takeaway
+    caption, numbered steps, and a walkthrough, and each passing the
+    five-second rule in `references/doc-diagrams.md`. Add a state diagram for
+    three or more statuses and a before/after visual for a changed flow; use
+    any other diagram kind that explains faster than prose.
+17. Use tables for anything the reader scans: parts, configuration, errors,
+    glossary.
 
 ## Evidence and writing standards
 
@@ -103,18 +125,24 @@ Write two files with different lifespans:
 
 ### `<topic>.md`
 
-Write clean, audience-appropriate prose ready to ship. Do not include confidence
-labels or the research ledger. Use the requested document type and length. If a
+Write clean, audience-appropriate documentation ready to ship. Do not include
+confidence labels or the research ledger. Unless Required sections says
+otherwise, follow the skeleton in `references/doc-writing.md` section 2:
+summary, at a glance, who it's for, big picture, how it works, key parts,
+states and data, configuration, what changed (for a change), usage, errors and
+troubleshooting, glossary, related. Drop only sections without evidence; make
+each kept section complete rather than padding the document. If a
 material fact remains unresolved, state the limitation plainly or omit the
 unsupported procedure rather than guessing. Include the diagrams that Visuals
-calls for (or that checklist item 16 warrants when Visuals is `auto`), in a
-format the target renders.
+calls for (at least the checklist item 16 minimum unless Visuals is `none`),
+in a format the target renders.
 
 ### `doc-result.md`
 
 Write the evidence pack with:
 
 - **Objective:** topic, document type, audience, reader goal, and scope.
+- **Key terms:** the main term and supporting terms, with the evidence that ranked them.
 - **Map:** relevant paths and one-line roles.
 - **Public surface:** exact signatures, schemas, commands, and configuration keys needed by the document.
 - **Findings:** labelled claims with `path:line` anchors.
