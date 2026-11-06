@@ -21,6 +21,7 @@ exhaustive tour of the codebase.
 - Scope and depth: <paths, behaviours, and approximate length>
 - Required sections: <sections or none>
 - Constraints: <style, format, security, compatibility, or none>
+- Visuals: <flowchart, sequence, state diagram, auto, or none; where it renders, e.g. GitHub, Confluence, PDF>
 - Relevant references: <existing docs, tickets, contracts, incidents, or none>
 
 Require an identifiable repository, topic, audience, and reader goal. Discover
@@ -51,6 +52,9 @@ symbol, endpoint, workflow, or file.
 9. Verify each documented behaviour against the code that implements it, not
    only its name or comment.
 10. Record missing intent or operational knowledge under Open questions.
+11. For a flow a basic user must follow, keep an edge table that maps each
+    diagram step and arrow to a verified anchor, as described in
+    `references/doc-diagrams.md`.
 
 Choose Standard for a bounded guide or reference and Deep for service-level or
 onboarding documentation. Split larger documentation by reader task rather than
@@ -76,6 +80,9 @@ Apply the items relevant to the selected document type:
 13. Distinguish guarantees from implementation details that may change.
 14. Remove redundant detail that does not help the reader accomplish the stated goal.
 15. Verify commands, links, anchors, diagrams, and examples when feasible.
+16. For non-technical readers, show branching flows, handoffs, and status
+    lifecycles as a small diagram in plain-language labels, with a caption
+    and a numbered walkthrough underneath.
 
 ## Evidence and writing standards
 
@@ -99,7 +106,9 @@ Write two files with different lifespans:
 Write clean, audience-appropriate prose ready to ship. Do not include confidence
 labels or the research ledger. Use the requested document type and length. If a
 material fact remains unresolved, state the limitation plainly or omit the
-unsupported procedure rather than guessing.
+unsupported procedure rather than guessing. Include the diagrams that Visuals
+calls for (or that checklist item 16 warrants when Visuals is `auto`), in a
+format the target renders.
 
 ### `doc-result.md`
 
@@ -109,9 +118,10 @@ Write the evidence pack with:
 - **Map:** relevant paths and one-line roles.
 - **Public surface:** exact signatures, schemas, commands, and configuration keys needed by the document.
 - **Findings:** labelled claims with `path:line` anchors.
+- **Diagram edges:** each step and arrow in the published diagrams with its labelled anchor; inferred edges left out or drawn dashed.
 - **Conflicts:** stale or contradictory sources and how the draft handled them.
 - **Open questions:** unresolved intent and every inference excluded from the published draft.
-- **Validation:** commands, examples, links, and render checks executed, with results.
+- **Validation:** commands, examples, links, and diagram render checks executed, with results.
 - **Not included:** deliberately excluded components or reader tasks.
 
 End the response with a concise summary and links to both files. Keep

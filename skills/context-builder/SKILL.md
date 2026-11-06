@@ -1,341 +1,230 @@
 ---
 name: context-builder
-description: Discover, verify, and shape the minimum context needed before acting on a task. Use whenever you must understand code, repos, docs, or files you haven't read — "where is X defined", "how does Y work", starting work in an unfamiliar area or codebase, bug hunts, tracing call sites and data flow, cross-file refactors, auditing a pattern, deciding what to read first, code review, or briefing a subagent or another agent. Covers search-tool craft (rg, fd, ast-grep, jq, yq, tree, plus Semgrep taint mode), and how to separate ambiguous candidates and label every finding verified, inferred, or assumed so the next action rests on checked evidence. Also use when the user mentions context engineering, context window, token budget, prompt caching, cost per task, running low on context, taint or dataflow tracking, or asks why an agent's answer was wrong or expensive. Prefer it over ad-hoc file reading any time a task touches more than two files — opening files to "get oriented" is what it replaces.
+description: Discover, verify, and shape the minimum context needed before acting. Use whenever you must understand code, repos, docs, or files you haven't read — "where is X defined", "how does Y work", unfamiliar codebases, bug hunts, tracing call sites and data flow, cross-file refactors, pattern audits, deciding what to read first, code review, docs with flow diagrams, or briefing a subagent. Covers rg, fd, ast-grep, jq, yq, tree, and Semgrep taint mode; separating ambiguous candidates; and labelling findings verified, inferred, or assumed. Also use for context engineering, context window or token budget, prompt caching, cost per task, running low on context, or why an agent's answer was wrong or expensive. Prefer it over ad-hoc file reading whenever a task touches more than two files.
 ---
 
 # Context Builder
 
-Build context before you act. Four phases: **Frame → Discover → Reflect → Shape**.
+Build context before you act: **Frame → Discover → Reflect → Shape**.
 
-## Host compatibility (Codex and Claude Code)
+## Host compatibility
 
-Resolve all bundled paths relative to the directory containing this loaded
-`SKILL.md`. Set `SKILL_DIR` to that absolute directory before running examples;
-do not assume a user-level install. Claude Code may provide `CLAUDE_SKILL_DIR`;
-in Codex, use the skill file path supplied in the skills catalog.
-
-Use the host's file-reading tool, or a ranged shell read such as
-`sed -n '40,90p' path/to/file`, wherever this skill says to read a file.
-Delegate only when subagents are available and permitted by the session;
-otherwise process bounded batches locally and retain a compact findings pack.
-Discovery budgets limit investigation, not completion of the user's task:
-after shaping context, continue the authorized work unless the user requested
-only a context pack.
+Resolve bundled paths relative to this `SKILL.md`'s directory (`SKILL_DIR`;
+Claude Code may set `CLAUDE_SKILL_DIR`, Codex gives the path in its catalog).
+"Read a file" means the host's read tool or a ranged read
+(`sed -n '40,90p' file`). Delegate only if subagents are available and allowed;
+otherwise work in bounded local batches. Budgets cap discovery, not the task:
+after shaping, continue the authorized work unless only a pack was requested.
 
 ## Choose the smallest workflow
 
-- **Known file and explicit edit:** read the relevant range and act. No discovery
-  round, tool inventory, ledger, or context pack is needed unless an unknown
-  dependency affects the change.
-- **Exact symbol, error, or endpoint:** start with a scoped literal search. Read
-  the useful hit directly; do not run a directory tour first.
-- **Ambiguous name or cross-file relationships:** use the discovery loop below.
-  Separate the candidates with cheap evidence before reading them all.
+- **Known file, explicit edit:** read the range and act. No ledger or pack.
+- **Exact symbol, error, or endpoint:** scoped literal search, read the hit. No
+  directory tour.
+- **Ambiguous name or cross-file relationships:** run the loop below.
 
 ## Budget rules
 
-- Budget both tool runtime and context size. A repository-wide parse or history
-  scan can cost more than a scoped search; widen only when evidence requires it.
-- Search to narrow the candidates, then read enough to answer the live question.
-  Do not repeat searches just to complete a checklist.
-- Keep enough context and time for implementation and validation after discovery.
-- Disable paging for any command that may invoke a pager (`git --no-pager diff`,
-  `GIT_PAGER=cat`); an interactive pager blocks the command indefinitely.
-- Per-command guidance: `references/discovery-recipes.md`.
+- Budget runtime and context. Repo-wide parses and history scans cost more than
+  scoped searches; widen only on evidence.
+- Search to narrow, read to answer the live question; no checklist searches.
+- Leave room for implementation and validation.
+- Disable pagers (`git --no-pager`, `GIT_PAGER=cat`); they block forever.
 
 ## Phase 1 — Frame
 
-For a discovery task, identify three things before broad reading. Keep these
-internal for small tasks; share a compact plan when the task benefits from one.
+Before broad reading (internally for small tasks):
 
-**1. Context questions.** Questions with checkable answers, not topics. Three to
-seven is normal.
+1. **Context questions** with checkable answers, usually 3–7. Not "understand
+   auth" but "Where is the session token validated?"
+2. **Success shape:** patch, review, or design. It decides relevance.
+3. **Budget tier**, held to:
 
-- Bad: "understand the auth system"
-- Good: "Where is the session token validated?" / "What happens on expiry?" /
-  "Is there existing retry logic I'd be duplicating?"
-
-**2. Success shape.** What the acting agent produces: a patch, a review, a
-design. This decides what context is relevant.
-
-**3. Budget.** Pick a tier and hold to it.
-
-| Tier | Reads | Pack size | Fits |
+| Tier | Reads | Pack | Fits |
 |---|---|---|---|
-| Micro | 1–3 files, ranges only | < 500 tokens | single-file edit, known location |
-| Standard | 4–10 files, mostly ranges | 1.5–3k tokens | feature work, bug with a symptom |
-| Deep | 10–25 files | ≤ 8k tokens | architecture review, cross-cutting refactor |
+| Micro | 1–3 files, ranges | < 500 tokens | single-file edit |
+| Standard | 4–10 files, mostly ranges | 1.5–3k | feature, bug with a symptom |
+| Deep | 10–25 files | ≤ 8k | architecture review, cross-cutting refactor |
 
-Needs more than Deep? The task is too big. Split it, one pack per piece.
+Beyond Deep, split the task: one pack per piece.
 
 ## Phase 2 — Discover
 
-### Pick the tool by the question
+### Tool by question
 
 | Question | Tool |
 |---|---|
-| What does this repo/directory look like at a glance? | `tree` |
+| Repo shape at a glance | `tree` |
 | Where does this *text* appear? | `rg` |
-| What files *exist* with this name, extension, or age? | `fd` |
-| Where does this *code shape* appear (calls, defs, JSX, imports)? | `ast-grep` |
-| Does a value *reach* a sink (flow, not shape)? | `semgrep` taint mode |
-| Something emitted JSON | `jq` |
-| Something is YAML (config, CI, compose) | `yq` |
-| I have ≤10 candidate files and need to understand them | a file-reading tool or ranged shell read |
-| I have >10, and the reading *is* the work | a subagent, briefed (below) |
+| Which files *exist* by name, extension, age? | `fd` |
+| Where does this *code shape* appear? | `ast-grep` |
+| Does a value *reach* a sink? | `semgrep` taint mode |
+| JSON / YAML output or config | `jq` / `yq` |
+| ≤10 candidate files to understand | ranged reads |
+| >10, and the reading *is* the work | a briefed subagent |
 
-Use `rg` for text and `ast-grep` for structure. Switch to `ast-grep` the moment a
-regex would need to care about whitespace, line breaks, nesting, or balanced
-parens.
+Switch from `rg` to `ast-grep` once a regex must handle whitespace, line breaks,
+nesting, or balanced parens. Semgrep is optional: check `command -v semgrep` only
+for a flow question; if absent, log it open. Check only tools the next step
+needs; a missing optional tool never blocks work. Flags and fallbacks:
+`references/tool-cookbook.md`.
 
-Escalate to Semgrep for dataflow — it's the only tool here that answers whether a
-value *reaches* something. It isn't one of the six core tools (`tree`, `rg`,
-`fd`, `ast-grep`, `jq`, `yq`): check `command -v semgrep`
-only when a flow question arises, and log the question as open if it's absent.
+### Ladder (cheapest rung first, skip what's irrelevant)
 
-Check availability only for tools the next step needs, and reuse that result.
-Use an available equivalent when appropriate; mention a fallback when it changes
-coverage or confidence. A missing optional tool must not block ordinary work.
-
-Flags, `ast-grep` gotchas, taint rules, fallbacks: `references/tool-cookbook.md`.
-
-### Climb the ladder
-
-Start at the cheapest rung that answers the question. Skip irrelevant rungs;
-these are choices, not mandatory stages.
-
-1. **Structure** — `tree -L 2 -I '.git|node_modules|build|dist|target'` when directory
-   structure is itself an open question. Scope large directory trees first.
-2. **Paths** — `fd` on names: `**/*repository*`, `**/*.config.*`. Names encode
-   intent; use them before content.
-3. **Content** — `rg -l` / `rg -c` for *which* and *how many* files before
-   printing any match bodies, then `rg -n -C3`. 400 hits means narrow
-   (`-t ts`, `-g`, `-w`), not read 400 hits.
-4. **Structure confirmation** — `ast-grep` when the pattern is code-shaped.
-5. **Ranged reads** — the 40 lines around the hit, not the 900-line file.
-6. **Full reads** — only files that are both small and central: interfaces,
-   configs, schemas, the one class the task is about.
-7. **Delegated reads** — when rungs 5–6 would pull more than 10 files into
-   *this* window, send the reading to a subagent instead. Its reads cost its
-   context, not yours; what comes back is a page of anchors.
-
-Delegation adds startup and coordination costs. Use it only when permitted and
-the independent read volume justifies those costs. Give it your Phase 1 questions
-verbatim, name the tier, and require the Findings format from Phase 4 —
-`[verified] claim — path:line`. A subagent asked to "look into" something
-returns prose you then have to verify, which is worse than reading it yourself.
+1. **Structure** — `tree -L 2 -I '.git|node_modules|build|dist|target'`, only if
+   layout is an open question.
+2. **Paths** — `fd -g '*repository*'` on names; names encode intent.
+3. **Content** — `rg -l` / `rg -c` before bodies, then `rg -n -C3`. 400 hits
+   means narrow (`-t`, `-g`, `-w`).
+4. **Shape** — `ast-grep` for code-shaped patterns.
+5. **Ranged reads** — ~40 lines around the hit.
+6. **Full reads** — only small, central files: interfaces, configs, schemas.
+7. **Delegated reads** — when 5–6 would pull >10 files here and the volume
+   justifies the overhead. Pass the Phase 1 questions verbatim, the tier, and
+   require `[verified] claim — path:line`. "Look into X" returns prose you must
+   re-verify.
 
 ### Seed
 
-- **Task names a symbol, error string, endpoint, or file** → anchor-out. Search
-  the exact string, land on it, expand through callers and callees. This is the
-  default; it beats browsing.
-- **Task is vague, or the domain is unfamiliar** → top-down. README, entry point,
-  config, directory structure. Build a map, then anchor.
+- **Named symbol, error, endpoint, or file** → anchor-out (default): search the
+  exact string, expand through callers and callees.
+- **Vague task or unfamiliar domain** → top-down: README, entry point, config,
+  structure; then anchor.
 
-Follow references one hop at a time. From an anchor, take the interface it
-implements, its direct caller, and its configuration as needed. Read focused
-tests when they establish the behaviour or regression that the task concerns.
+Follow one hop at a time: implemented interface, direct caller, config, and
+focused tests when they establish the behaviour in question.
 
-### Several candidates: separate them with evidence
+### Several candidates
 
-When a scoped search leaves more than one plausible file, rank them with cheap
-signals before opening any, then read top-down and stop once the question is
-answered. Works in any language with only `rg`, `fd`, and `ast-grep`:
+Rank with cheap signals before opening; stop once answered:
 
-1. **Spelling** — unsure what the repo calls it? List its own identifiers for
-   the stem instead of guessing synonyms:
+1. **Spelling** — the repo's own names for the stem:
    `rg -oIi --no-filename '\w*retry\w*' | sort | uniq -c | sort -rn | head`.
-2. **Concentration** — `rg -cw 'Term'` shows where the name clusters; the
-   definer and its heaviest user usually top the counts.
-3. **Definition** — find the one declaration with `ast-grep` (or
-   `rg -nw '(class|interface|type|def|fun|function|const|object) Term'`). It is the
-   anchor every other candidate is measured against.
-4. **Edges, one hop** — who imports or calls the definer, and what it depends
-   on. A file that names the term but has no edge to the definer is usually a
-   homonym.
-5. **Tie-breakers** — reachability from the task's entry point, configuration
-   wiring, a focused test, recent churn (`git log --oneline -5 -- path`).
+2. **Concentration** — `rg -cw 'Term'`; definer and heaviest user top the list.
+3. **Definition** — the one declaration (`ast-grep`, or
+   `rg -nw '(class|interface|type|def|fun|function|const|object) Term'`).
+4. **Edges, one hop** — no import/call edge to the definer usually means a homonym.
+5. **Tie-breakers** — reachability from the entry point, config wiring, a
+   focused test, churn (`git log --oneline -5 -- path`).
 
-Record why each candidate was kept or dropped; that note is what makes stopping
-early safe. Commands per language: `references/discovery-recipes.md` Recipe 8.
+Note why each was kept or dropped; that makes stopping early safe. Per-language
+commands: `references/discovery-recipes.md` Recipe 8.
 
 ## Phase 3 — Reflect
 
-Track question status after each round. For Standard/Deep discovery, keep a
-compact ledger; update changed entries rather than repeatedly printing the table:
+For Standard/Deep, keep a compact ledger (without it packs end up both
+incomplete and bloated); update only changed rows:
 
 | # | Question | Status | Evidence |
 |---|---|---|---|
 | 1 | Where is the token validated? | answered | `auth/Filter.kt:88` |
-| 2 | What happens on expiry? | partial | refresh path exists, unread |
-| 3 | Existing retry logic? | open | — |
+| 2 | What happens on expiry? | partial | refresh path, unread |
 
-Then ask three things:
-
-1. **Which questions are still open, and is there a specific search that closes
-   them?** Run it. If you can't name the search, more reading won't help.
-2. **What did this round newly expose?** Chase a new identifier only if a live
-   question depends on it. Curiosity is how packs reach 40k tokens.
-3. **Am I saturating?** A round that changed no statuses means further reads in
-   that direction are dead weight. Change direction or stop.
+After each round ask: Which open question has a specific search that closes it
+(none nameable → more reading won't help)? Does a new identifier serve a live
+question (else skip it)? Did any status change (no → change direction or stop)?
 
 ### Three rounds per open question
 
-A round is one hypothesis, however many commands it takes.
-
-1. The user's exact vocabulary — `rg -lw 'theirTerm'`.
-2. Loosened — drop `-w`, add `-i`, add `-u` (the file may be `.gitignore`d),
-   widen the glob.
-3. Structural or synonymous — `ast-grep` for the shape, or the names the
-   codebase actually uses for the stem (spelling move in Phase 2), not guesses.
-
-No candidate file set after round 3? **Stop.** Don't start a fourth round with a
-fourth synonym. Take one of two exits:
-
-- **The user can resolve it** → ask, carrying the search.
-- **They can't, or it isn't blocking** → log it under Open questions.
-
-An open question is a legitimate output. "I could not determine X; the likely
-place is Y" beats a confident guess and costs almost nothing. Never fill a gap
-with plausible invention.
+A round is one hypothesis: (1) the user's exact term, `rg -lw`; (2) loosened:
+drop `-w`, add `-i`, `-u`, widen the glob; (3) structural or the repo's own
+synonyms. No candidates after round 3 → **stop**: ask if the user can resolve
+it, otherwise log it under Open questions. "Couldn't determine X; likely in Y"
+beats a confident guess. Never invent.
 
 ### Stop when
 
-Stop discovery when the live questions are answered or its budget is spent.
-A round with no progress ends that search direction, not every other question.
-Use a specific alternative hypothesis within the three-round budget when useful.
+Live questions are answered or the budget is spent. A dead round ends that
+direction only. Zero hits rule out a spelling, not the concept. Several
+candidates → callers, config, tests; ask only if intent is unknown. 100+ hits →
+scope by entry point or subsystem. Intent not in the code (design choice, bug
+vs. deliberate) → ask.
 
-- **Zero textual hits** rule out that spelling in the searched scope, not the
-  concept. Check coverage and a plausible structural or synonymous alternative.
-- **Several candidates** call for checking callers, configuration, or focused
-  tests when those can distinguish them. Ask only when intent remains unknown.
-- **Narrowing still leaves 100+ hits:** use the task's entry point or subsystem;
-  ask which subsystem only if available evidence cannot establish it.
-- **The answer depends on intent that isn't in the code** — which design they
-  want, whether a behavior is a bug or deliberate.
+### Tight window
 
-### When the window is already tight
+Shape the pack now (it survives compaction). Re-anchor, don't re-read: cite
+the pack and re-open only stale ranges. Delegate the rest with the pack as the brief. Never
+spend the last of the window on discovery.
 
-Context pressure changes what to do next, not just how much of it to do.
+### Confidence before acting
 
-- **Shape early.** Write the pack now, from what you have. A pack survives
-  compaction; scrollback doesn't.
-- **Re-anchor, don't re-read.** After a compaction the pack *is* your context.
-  Cite it. Re-open only the relevant range when edits or uncertainty make the saved
-  evidence stale.
-- **Delegate what's left** (rung 7), with the pack as the subagent's brief.
-- **Never spend the last of the window on discovery.** Leave enough room to act,
-  or you finish with perfect context and no budget to use it.
+- A search hit proves text, not behaviour; `verified` requires reading the range.
+- "This path runs" needs code plus reachability (caller, wiring, or test);
+  code alone is `inferred`.
+- Negative claims carry their command, scope, and blind spots (reflection, DI,
+  string-built names, generated code, other repos).
+- Separate direct dependents (break on rename) from indirect (behaviour changes).
+- Anchors expire when you edit their file.
 
-### Confidence before you act
+Load-bearing but unverified → one targeted check, or state it as a risk.
 
-A finding is load-bearing when the next action depends on it. Before acting on
-one, hold it to these rules:
+### Questions carry the search
 
-- **A search hit proves text exists, not behaviour.** Label a claim `verified`
-  only after reading enough of the range to know what the line does.
-- **"This is the path that runs" needs two signals** — the code plus evidence
-  it is reached: a caller on the task's path, the config that wires it, or a
-  test that exercises it. Code alone, however carefully read, is `inferred`.
-- **A negative claim carries its search.** "No other callers" is only as strong
-  as the command behind it: state the command, the scope, and its blind spots
-  (reflection, DI wiring, string-built names, generated code, other repos).
-- **Separate direct from indirect dependence.** A file that names a symbol
-  breaks on a rename; one that reaches it through a wrapper or default only
-  changes behaviour. Say which each dependent is.
-- **Anchors expire on edit.** Re-check any anchor in a file you have changed.
+Never a bare "can you clarify?". State what you searched and found, then offer
+the choice:
 
-Still `inferred` or `assumed` and load-bearing? Close it with one targeted
-search or read, or carry it into the answer as a stated risk — never as fact.
+> `rg -lw 'sessionToken'` finds nothing; closest are `authToken`
+> ([auth/session.ts:18](auth/session.ts#L18)) and `refreshToken`
+> ([auth/refresh.ts:40](auth/refresh.ts#L40)). Which is expiring early?
 
-### Ask a question that carries the search
-
-Never ask a bare "can you clarify?" — it throws away what you learned and makes
-the user do the work twice. State what you looked for, what you found, and offer
-the specific choice:
-
-> `rg -lw 'sessionToken'` finds nothing. The closest things are `authToken` in
-> [auth/session.ts:18](auth/session.ts#L18) and `refreshToken` in
-> [auth/refresh.ts:40](auth/refresh.ts#L40). Which is the one that's expiring early?
-
-Don't ask before running round 1 — most questions die there. Don't ask what's
-derivable from what you've read. Don't ask a routine judgment call a colleague
-would just make and mention: make it, say so, move on.
+Not before round 1, not for derivable facts, not for routine judgment calls:
+make those and say so.
 
 ## Phase 4 — Shape
 
-Write a briefing, not an archive.
+A briefing, not an archive.
 
-- **Anchor, don't excerpt.** `auth/Filter.kt:88 — validates JWT, throws on
-  expiry` beats pasting the method. Paste code only where the agent must
-  reproduce exact syntax: signatures, schemas, config keys, error strings. Write
-  anchors as `path/to/file.ts:42`, or in the host's clickable link format when
-  it has one (e.g. `[file.ts:42](path/to/file.ts#L42)`).
-- **Label confidence.** Mark every claim `verified` (you read it), `inferred`
-  (deduced from naming or structure — say from what), or `assumed`. Unlabelled
-  inference is how hallucination gets downstream.
-- **Position deliberately.** Attention is strongest at start and end. Task and
-  constraints first, bulk in the middle, next action last.
-- **Order for cache reuse.** For a pack reused across turns, put stable material
-  (conventions, schemas, map) first and volatile material (current task, latest
-  findings) last. A stable prefix is a cacheable prefix.
+- **Anchor, don't excerpt:** `auth/Filter.kt:88 — validates JWT, throws on
+  expiry`. Paste only exact syntax (signatures, schemas, keys, error strings).
+  Use the host's link format when it has one.
+- **Label every claim** `verified`, `inferred` (say from what), or `assumed`.
+- **Position:** task and constraints first, bulk middle, next action last. For
+  reused packs, stable material first so the prefix caches.
 
-### Pack structure
+**Pack (Standard/Deep; omit empty):** Objective · Constraints · Map · Findings
+(`[verified] claim — path:line`) · Excerpts · Open questions · Not included ·
+Next action. Micro: Objective, Findings, Next action. Routine edits: none.
+Templates: `references/pack-templates.md`.
 
-For Standard/Deep discovery, use these sections and omit empty ones:
+### Diagrams for basic-user docs
 
-- **Objective:** what the acting agent must produce.
-- **Constraints:** conventions and behaviour that must be preserved.
-- **Map:** relevant paths and their roles.
-- **Findings:** `[verified] claim — path:line`; label inferences and their basis.
-- **Excerpts:** only exact syntax needed for action.
-- **Open questions:** unknowns and likely places to resolve them.
-- **Not included:** deliberately excluded scope to avoid repeating searches.
-- **Next action:** the first concrete step.
-
-Micro discovery needs only Objective, Findings, and Next action. Routine edits
-need no pack. Templates and handoff self-check: `references/pack-templates.md`.
+Draw one for branching steps, handoffs, or status lifecycles; ≤5 linear steps
+stay a list. Every box and arrow traces to a `verified` finding (inferred ones
+are dropped or dashed and logged). Use plain reader labels ("You sign in"), not
+code names; about nine boxes max. Flowchart for decisions, sequence for who
+talks to whom, state for status. Use Mermaid if the target renders it, plain
+text otherwise, plus a caption and numbered walkthrough. Check it renders, or
+say it wasn't. Templates: `references/doc-diagrams.md`.
 
 ## Anti-patterns
 
-| Instead of | Do this |
+| Instead of | Do |
 |---|---|
-| Reading files to "get oriented" | Search for the task's own words first |
-| Reading the whole file | Read the range the hit is in |
-| Reading every test to learn an API | Read its interface, then focused tests for behaviour |
-| Printing match bodies on the first pass | `rg -l` / `rg -c` to size the blast radius |
-| A fourth synonym after three rounds | Stop: ask, or log it as an open question |
-| Pasting large excerpts | Anchor + one-line claim |
-| Chasing every new identifier | Chase only what an open question depends on |
-| Pulling 20 files into this window yourself | Delegate the reading, take back anchors |
-| Investigating an adjacent problem you spotted | One line at the end, after the answer |
-| Regexing toward a dataflow answer | A Semgrep taint rule, or log it open |
-| Silently guessing a gap | Log it under Open questions |
-| Labelling a search hit `verified` | Read the range first, or label it `inferred` |
-| "Nothing else uses it" with no search shown | State the command, scope, and blind spots |
-| One pack for a sprawling task | Split the task, one pack each |
-| Re-reading a file already in context | Cite what you already have |
+| Reading to "get oriented" | Search the task's own words |
+| Whole files, every test | The hit's range; interface, then focused tests |
+| Match bodies first | `rg -l` / `rg -c` |
+| A fourth synonym | Stop: ask or log open |
+| Big excerpts | Anchor + one-line claim |
+| Chasing every identifier | Only what a live question needs |
+| 20 files in this window | Delegate, take back anchors |
+| Adjacent problems | One line after the answer |
+| Regex for dataflow | Semgrep taint, or log open |
+| Hit labelled `verified` | Read the range, or `inferred` |
+| "Nothing else uses it" | Show command, scope, blind spots |
+| One pack for a sprawling task | Split it |
+| Re-reading what's in context | Cite it |
 
 ## Where to go next
 
-Open only the row that matches what you're doing.
-
 | Scenario | Open |
 |---|---|
-| Empty search; a long pipeline to retype; per-language `ast-grep` patterns; a Semgrep taint rule; a missing tool's fallback | `references/tool-cookbook.md` |
-| Tracing a value backward or forward; finding config, an error's origin, a convention, or a change's blast radius; separating several candidates; unfamiliar repo with no anchor; per-command costs | `references/discovery-recipes.md` |
-| Delta, handoff, review, or working-set packs; the hand-off self-check; producing a pack section with a tool instead of by reading | `references/pack-templates.md` |
+| Empty search, saved pipelines, `ast-grep` patterns, taint rules, fallbacks | `references/tool-cookbook.md` |
+| Tracing values, config, error origins, blast radius, candidates, no anchor, costs | `references/discovery-recipes.md` |
+| Delta, handoff, review, working-set packs; hand-off self-check | `references/pack-templates.md` |
+| Flowchart, sequence, state diagrams; plain labels; render checks | `references/doc-diagrams.md` |
 
-`prompts/` holds six ready-to-send workflow prompts that drive this loop — each
-fixes the tier, states what discovery must answer, and names the result file.
-Offer the matching one: `01-before-debugging`,
+Workflow prompts in `prompts/`: `01-before-debugging`,
 `02-before-planning-implementing`, `03-before-reviewing-code`,
-`04-before-refactoring`, `05-for-documentation`, or
-`06-for-improvement-research`.
-
-For a Kotlin Spring Boot backend task, prefer the self-contained prompt in
-`prompts/kotlin-backend-spring-boot/`: `01-design.md` for design only,
-`02-plan-implement.md` for planning or authorized implementation, and
-`03-code-review.md` for review only. Each combines Kotlin language, backend
-system, and Spring Boot framework concerns; do not append a separate profile.
+`04-before-refactoring`, `05-for-documentation`, `06-for-improvement-research`.
+Kotlin Spring Boot: `prompts/kotlin-backend-spring-boot/` (`01-design.md`,
+`02-plan-implement.md`, `03-code-review.md`), self-contained, so no extra profile.
